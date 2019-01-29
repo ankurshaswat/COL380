@@ -7,6 +7,7 @@ struct point_with_cluster {
   int cluster;
   int points_in_cluster = 0;
   void add_to_point(point_with_cluster *point);
+  void accumulate_values(point_with_cluster *point);
   void copy(point_with_cluster *point);
   void average_out_point();
   void reset();

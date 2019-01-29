@@ -8,6 +8,13 @@ void point_with_cluster::add_to_point(point_with_cluster *point) {
   this->points_in_cluster++;
 }
 
+void point_with_cluster::accumulate_values(point_with_cluster *point) {
+  this->x += point->x;
+  this->y += point->y;
+  this->z += point->z;
+  this->points_in_cluster += point->points_in_cluster;
+}
+
 void point_with_cluster::copy(point_with_cluster *point) {
   this->x = point->x;
   this->y = point->y;

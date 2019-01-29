@@ -1,61 +1,25 @@
+#include "helper.h"
+#include "point_with_cluster.h"
 #include <cmath>
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
-#include "point_with_cluster.h"
 
 using namespace std;
 
-int k = 3;
-int num_points = 10;
-
-void generate_random_points(int number, int number_of_clusters,
-                            vector<point_with_cluster *> &points) {
-
-  for (int i = 0; i < number; i++) {
-    point_with_cluster *new_point = new point_with_cluster;
-
-    new_point->x = rand() % 200 - 100;
-    new_point->y = rand() % 200 - 100;
-    new_point->z = rand() % 200 - 100;
-    new_point->cluster = rand() % number_of_clusters;
-
-    points.push_back(new_point);
-  }
-}
-
-double distance(point_with_cluster *point1, point_with_cluster *point2) {
-  return sqrt(pow(point1->x - point2->x, 2) + pow(point1->y - point2->y, 2) +
-              pow(point1->z - point2->z, 2));
-}
-
-void printPoints(vector<point_with_cluster *> &points) {
-  cout << "Cycle Start" << endl;
-  for (int i = 0; i < points.size(); i++) {
-    cout << "(" << points[i]->x << "," << points[i]->y << "," << points[i]->z
-         << ") " << points[i]->cluster << endl;
-  }
-}
-
-void printAverageDistance(vector<point_with_cluster *> &points,
-                          vector<point_with_cluster *> &cluster) {
-  double totalDist = 0;
-  for (int i = 0; i < points.size(); i++) {
-    totalDist += distance(points[i], cluster[points[i]->cluster]);
-  };
-  cout << totalDist << endl;
-}
+int K = 10;
+int NUM_POINTS = 100000;
 
 int main() {
 
   srand(1);
 
   vector<point_with_cluster *> points;
-  generate_random_points(num_points, k, points);
+  generate_random_points(NUM_POINTS, K, points);
 
   vector<point_with_cluster *> centroids;
-  for (int i = 0; i < k; i++) {
+  for (int i = 0; i < K; i++) {
     point_with_cluster *new_point = new point_with_cluster;
     centroids.push_back(new_point);
   }
@@ -64,26 +28,29 @@ int main() {
   int num_iters = 0;
 
   do {
-    printPoints(points);
+    cout << num_changes << endl << endl;
 
     num_iters++;
     num_changes = 0;
 
     // Find new Centroids by averaging points values
-    for (int i = 0; i < num_points; i++) {
+    for (int i = 0; i < K; i++) {
+      centroids[i]->reset();
+    }
+    for (int i = 0; i < NUM_POINTS; i++) {
       centroids[points[i]->cluster]->add_to_point(points[i]);
     }
-    for (int i = 0; i < k; i++) {
+    for (int i = 0; i < K; i++) {
       centroids[i]->average_out_point();
     }
 
     // Assign new closest centrois
-    for (int i = 0; i < num_points; i++) {
+    for (int i = 0; i < NUM_POINTS; i++) {
 
       double min_dist = __INT_MAX__;
       int closest_centroid = -1;
 
-      for (int j = 0; j < k; j++) {
+      for (int j = 0; j < K; j++) {
         int dist = distance(points[i], centroids[j]);
         if (dist < min_dist) {
           min_dist = dist;
@@ -98,7 +65,7 @@ int main() {
     }
 
     printAverageDistance(points, centroids);
-  } while (num_changes > 0);
+  } while (num_changes > 0.01 * NUM_POINTS && num_iters < 1000);
 
   cout << "Num Iters= " << num_iters << endl;
 
