@@ -5,9 +5,9 @@
 
 using namespace std;
 
-int NUM_THREADS = 8;
-int K = 10;
-int NUM_POINTS = 100000;
+int NUM_THREADS = 2;
+int K = 100;
+int NUM_POINTS = 10000;
 
 int num_changes = 0;
 

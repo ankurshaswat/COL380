@@ -8,8 +8,8 @@
 
 using namespace std;
 
-int K = 10;
-int NUM_POINTS = 100000;
+int K = 100;
+int NUM_POINTS = 10000;
 
 int main() {
 
