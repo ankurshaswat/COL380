@@ -1,10 +1,13 @@
-all: sequential pthread
+all: sequential pthread omp
 
 sequential: lab1_io.cpp lab1_sequential.cpp main_sequential.cpp
 		g++ -g -o main_sequential.out lab1_io.cpp lab1_sequential.cpp main_sequential.cpp
 
 pthread: point_with_cluster.cpp lab1_io.cpp lab1_pthread.cpp main_pthread.cpp
 		g++ -g -o main_pthread.out point_with_cluster.cpp lab1_io.cpp lab1_pthread.cpp main_pthread.cpp -lpthread
+
+omp:  point_with_cluster.cpp lab1_io.cpp lab1_omp.cpp main_omp.cpp
+		g++ -g -o main_omp.out point_with_cluster.cpp lab1_io.cpp lab1_omp.cpp main_omp.cpp -fopenmp
 
 clean:
 	rm -rf *.o *.out

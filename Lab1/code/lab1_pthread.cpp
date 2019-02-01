@@ -90,7 +90,6 @@ void *thread_work(void *in) {
               thread_aggregates[i][centroid_number]);
         }
         thread_aggregates[0][centroid_number]->average_out_point();
-        // centroids[centroid_number]->copy(thread_aggregates[0][centroid_number]);
 
         centroid_number += NUM_THREADS;
       }
