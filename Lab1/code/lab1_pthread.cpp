@@ -41,7 +41,8 @@ void *thread_work(void *in) {
         int closest_centroid = -1;
         int offset = (num_iters - 1) * num_centroids * 3;
         for (int j = 0; j < num_centroids; j++) {
-          int dist = distance(*points_cluster, i, *centroids_loc, j, offset);
+          float dist = distance(data_points_loc, i, *centroids_loc, j, offset);
+
           if (dist < min_dist) {
             min_dist = dist;
             closest_centroid = j;
@@ -124,10 +125,11 @@ void *thread_work(void *in) {
 void kmeans_pthread(int num_threads, int N, int K, int *data_points,
                     int **data_point_cluster, float **centroids,
                     int *num_iterations) {
-  int MAX_ITERS = 300;
+  int MAX_ITERS = 100;
   NUM_THREADS = num_threads;
   num_centroids = K;
   num_points = N;
+  data_points_loc = data_points;
 
   for (int i = 0; i < NUM_THREADS; i++) {
     vector<point_with_cluster *> thread_aggr;
@@ -135,21 +137,16 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
       point_with_cluster *point = new point_with_cluster;
       thread_aggr.push_back(point);
     }
-    cout<<thread_aggr.size()<<endl;
     thread_aggregates.push_back(thread_aggr);
   }
 
   *data_point_cluster = (int *)malloc(sizeof(int) * (num_points)*4);
   *centroids = (float *)malloc(sizeof(float) * ((MAX_ITERS + 1) * K) * 3);
-
   points_cluster = data_point_cluster;
   centroids_loc = centroids;
-  data_points_loc = data_points;
 
   int return_code;
   pthread_t threads[NUM_THREADS];
-
-  cout<<thread_aggregates.size()<<' '<<thread_aggregates[0].size()<<endl;
 
   srand(1);
 
@@ -162,6 +159,7 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
   work = true;
   while (count < NUM_THREADS) {
   }
+
   count = 0;
   work_type = 1;
   while (count < NUM_THREADS) {
@@ -171,8 +169,13 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
   while (count < NUM_THREADS) {
   }
 
+  for (int j = 0; j < K; j++) {
+    (*centroids)[3 * j] = thread_aggregates[0][j]->x;
+    (*centroids)[3 * j + 1] = thread_aggregates[0][j]->y;
+    (*centroids)[3 * j + 2] = thread_aggregates[0][j]->z;
+  }
+
   do {
-    cout << num_changes << endl << endl;
 
     num_iters++;
     num_changes = 0;
@@ -185,7 +188,7 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
       while (count < NUM_THREADS) {
       }
 
-      if (work_type == 1) {
+      if (work_type == 2) {
         for (int j = 0; j < K; j++) {
           (*centroids)[offset + 3 * j] = thread_aggregates[0][j]->x;
           (*centroids)[offset + 3 * j + 1] = thread_aggregates[0][j]->y;
@@ -194,7 +197,6 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
       }
     }
 
-    printAverageDistance(num_points, *data_point_cluster, *centroids, offset);
   } while (num_changes > 0.01 * num_points && num_iters < MAX_ITERS);
 
   // Waiting for threads to close
@@ -203,8 +205,6 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
   for (int i = 0; i < NUM_THREADS; i++) {
     pthread_join(threads[i], NULL);
   }
-
-  cout << "Num Iters= " << num_iters << endl;
 
   *num_iterations = num_iters;
   pthread_exit(NULL);

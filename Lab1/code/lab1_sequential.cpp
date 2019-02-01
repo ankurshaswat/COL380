@@ -8,7 +8,7 @@ using namespace std;
 void kmeans_sequential(int N, int K, int *data_points, int **data_point_cluster,
                        float **centroids, int *num_iterations) {
 
-  int MAX_ITERS = 150;
+  int MAX_ITERS = 100;
   int num_iters = 0;
   int num_points = N;
 
@@ -28,6 +28,9 @@ void kmeans_sequential(int N, int K, int *data_points, int **data_point_cluster,
 
   for (int i = 0; i < K; i++) {
     cluster_counts[i] = 0;
+    (*centroids)[3 * i] = 0;
+    (*centroids)[3 * i + 1] = 0;
+    (*centroids)[3 * i + 2] = 0;
   }
 
   for (int i = 0; i < num_points; i++) {
@@ -54,8 +57,8 @@ void kmeans_sequential(int N, int K, int *data_points, int **data_point_cluster,
 
   do {
     num_iters++;
-
     num_changes = 0;
+
     // Assign new closest centrois
     for (int i = 0; i < num_points; i++) {
 
@@ -105,12 +108,7 @@ void kmeans_sequential(int N, int K, int *data_points, int **data_point_cluster,
       (*centroids)[offset_centroid + 3 * i + 2] /= cluster_counts[i];
       cluster_counts[i] = 0;
     }
-    cout << num_changes << endl << endl;
-
-    printAverageDistance(num_points, *data_point_cluster, *centroids,
-                         offset_centroid);
   } while (num_changes > 0.01 * num_points && num_iters < MAX_ITERS);
 
   *num_iterations = num_iters;
-  cout << "Num Iters= " << num_iters << endl;
 }
