@@ -1,10 +1,11 @@
 #!/bin/bash
 rm ../results/time_sequential.txt
+K=4
 
 for i in `seq 10000 10000 100000`
     do
         echo -n "${i} "
-        ./../bin/main_sequential.out 10 ../dataset/dataset_${i}_10.txt ../results/dataset_${i}_10_sequential_data_points.txt ../results/dataset_${i}_10_sequential_centroids.txt | cut -d' ' -f 3
+        ./../bin/main_sequential.out ${K} ../dataset/dataset_${i}_${K}.txt ../results/dataset_${i}_${K}_sequential_data_points.txt ../results/dataset_${i}_${K}_sequential_centroids.txt | cut -d' ' -f 3
     done | tee -a ../results/time_sequential.txt 
 
 for type in 'pthread' 'omp'
@@ -15,7 +16,7 @@ for type in 'pthread' 'omp'
                 for i in `seq 10000 10000 100000`
                     do
                         echo -n "${i} "
-                        ./../bin/main_${type}.out ${threads} 10 ../dataset/dataset_${i}_10.txt ../results/dataset_${i}_10_${type}_${threads}_data_points.txt ../results/dataset_${i}_10_${type}_${threads}_centroids.txt | cut -d' ' -f 3
+                        ./../bin/main_${type}.out ${threads} ${K} ../dataset/dataset_${i}_${K}.txt ../results/dataset_${i}_${K}_${type}_${threads}_data_points.txt ../results/dataset_${i}_${K}_${type}_${threads}_centroids.txt | cut -d' ' -f 3
                     done | tee -a ../results/time_${type}_${threads}.txt 
             done
     done

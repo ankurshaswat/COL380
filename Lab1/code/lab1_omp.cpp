@@ -11,7 +11,6 @@ void kmeans_omp(int num_threads, int N, int K, int *data_points,
                 int *num_iterations) {
 
   omp_set_num_threads(num_threads);
-
   int MAX_ITERS = 100;
 
   vector<vector<point_with_cluster *>> thread_aggregates;
