@@ -1,0 +1,25 @@
+# plot file for gnuplot
+set terminal pdf
+set output "../results/Plots.pdf"
+set key left box
+
+set xlabel "Array size (*1024*1024)"
+set ylabel "Time"
+
+set title "Sequential vs. Pthread" font ",20"
+plot "../results/time_sequential.txt" title "Sequential" with linespoints, "../results/time_pthread_2.txt" title "Pthread 2" with linespoints, "../results/time_pthread_4.txt" title "Pthread 4" with linespoints, "../results/time_pthread_8.txt" title "Pthread 8" with linespoints, "../results/time_pthread_16.txt" title "Pthread 16" with linespoints
+
+set title "Sequential vs. OMP" font ",20"
+plot "../results/time_sequential.txt" title "Sequential" with linespoints, "../results/time_omp_2.txt" title "Omp 2" with linespoints, "../results/time_omp_4.txt" title "Omp 4" with linespoints, "../results/time_omp_8.txt" title "Omp 8" with linespoints, "../results/time_omp_16.txt" title "Omp 16" with linespoints
+
+set title "2 Threads" font ",20"
+plot "../results/time_sequential.txt" title "Sequential" with linespoints, "../results/time_omp_2.txt" title "Omp" with linespoints, "../results/time_pthread_2.txt" title "Pthread" with linespoints
+
+set title "4 Threads" font ",20"
+plot "../results/time_sequential.txt" title "Sequential" with linespoints, "../results/time_omp_4.txt" title "Omp" with linespoints, "../results/time_pthread_4.txt" title "Pthread" with linespoints
+
+set title "8 Threads" font ",20"
+plot "../results/time_sequential.txt" title "Sequential" with linespoints, "../results/time_omp_8.txt" title "Omp" with linespoints, "../results/time_pthread_8.txt" title "Pthread" with linespoints
+
+set title "16 Threads" font ",20"
+plot "../results/time_sequential.txt" title "Sequential" with linespoints, "../results/time_omp_16.txt" title "Omp" with linespoints, "../results/time_pthread_16.txt" title "Pthread" with linespoints

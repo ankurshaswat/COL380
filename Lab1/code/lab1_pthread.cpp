@@ -206,5 +206,5 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
   }
 
   *num_iterations = num_iters;
-  pthread_exit(NULL);
+  // pthread_exit(NULL);
 }
