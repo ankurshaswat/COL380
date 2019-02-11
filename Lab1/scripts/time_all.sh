@@ -1,6 +1,6 @@
 #!/bin/bash
 rm ../results/time_sequential.txt
-K=4
+K=10
 
 for i in `seq 10000 10000 100000`
     do
@@ -16,7 +16,7 @@ for type in 'pthread' 'omp'
                 for i in `seq 10000 10000 100000`
                     do
                         echo -n "${i} "
-                        ./../bin/main_${type}.out ${threads} ${K} ../dataset/dataset_${i}_${K}.txt ../results/dataset_${i}_${K}_${type}_${threads}_data_points.txt ../results/dataset_${i}_${K}_${type}_${threads}_centroids.txt | cut -d' ' -f 3
+                        ./../bin/main_${type}.out ${K} ${threads} ../dataset/dataset_${i}_${K}.txt ../results/dataset_${i}_${K}_${type}_${threads}_data_points.txt ../results/dataset_${i}_${K}_${type}_${threads}_centroids.txt | cut -d' ' -f 3
                     done | tee -a ../results/time_${type}_${threads}.txt 
             done
     done

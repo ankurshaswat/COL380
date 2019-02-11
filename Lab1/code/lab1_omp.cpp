@@ -28,7 +28,9 @@ void kmeans_omp(int num_threads, int N, int K, int *data_points,
   *centroids = (float *)malloc(sizeof(float) * ((MAX_ITERS + 1) * K) * 3);
 
   srand(1);
-
+  for (int i = 0; i < N; i++) {
+    (*data_point_cluster)[4 * i + 3] = rand() % K;
+  }
 #pragma omp parallel
   {
 
@@ -39,10 +41,7 @@ void kmeans_omp(int num_threads, int N, int K, int *data_points,
       (*data_point_cluster)[4 * i] = data_points[3 * i];
       (*data_point_cluster)[4 * i + 1] = data_points[3 * i + 1];
       (*data_point_cluster)[4 * i + 2] = data_points[3 * i + 2];
-      (*data_point_cluster)[4 * i + 3] = rand() % K;
     }
-
-#pragma omp barrier
 
     for (int i = 0; i < K; i++) {
       thread_aggregates[tid][i]->reset();
@@ -78,16 +77,23 @@ void kmeans_omp(int num_threads, int N, int K, int *data_points,
 
   int num_changes = 0;
   int num_iters = 0;
-  do {
-
-    num_iters++;
-    num_changes = 0;
-
-    int offset = num_iters * K * 3;
 
 #pragma omp parallel
-    {
+  {
+    do {
+
       int tid = omp_get_thread_num();
+
+#pragma omp barrier
+
+      if (tid == 0) {
+        num_iters++;
+        num_changes = 0;
+      }
+
+#pragma omp barrier
+
+      int offset = num_iters * K * 3;
 
       int local_changes = 0;
 
@@ -113,11 +119,6 @@ void kmeans_omp(int num_threads, int N, int K, int *data_points,
         }
       }
 
-#pragma omp atomic
-      num_changes += local_changes;
-
-#pragma omp barrier
-
       for (int i = 0; i < K; i++) {
         thread_aggregates[tid][i]->reset();
       }
@@ -128,6 +129,9 @@ void kmeans_omp(int num_threads, int N, int K, int *data_points,
             (*data_point_cluster)[4 * i], (*data_point_cluster)[4 * i + 1],
             (*data_point_cluster)[4 * i + 2]);
       }
+
+#pragma omp atomic
+      num_changes += local_changes;
 
 #pragma omp barrier
 
@@ -140,17 +144,18 @@ void kmeans_omp(int num_threads, int N, int K, int *data_points,
         }
         thread_aggregates[0][centroid_number]->average_out_point();
 
+        (*centroids)[offset + 3 * centroid_number] =
+            thread_aggregates[0][centroid_number]->x;
+        (*centroids)[offset + 3 * centroid_number + 1] =
+            thread_aggregates[0][centroid_number]->y;
+        (*centroids)[offset + 3 * centroid_number + 2] =
+            thread_aggregates[0][centroid_number]->z;
         centroid_number += num_threads;
       }
-    }
 
-    for (int j = 0; j < K; j++) {
-      (*centroids)[offset + 3 * j] = thread_aggregates[0][j]->x;
-      (*centroids)[offset + 3 * j + 1] = thread_aggregates[0][j]->y;
-      (*centroids)[offset + 3 * j + 2] = thread_aggregates[0][j]->z;
-    }
-
-  } while (num_changes > 0.01 * N && num_iters < MAX_ITERS);
+#pragma omp barrier
+    } while (num_changes > 0.01 * N && num_iters < MAX_ITERS);
+  }
 
   *num_iterations = num_iters;
 }

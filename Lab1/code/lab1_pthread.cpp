@@ -24,18 +24,18 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 void *aggregrate_points(void *in) {
   int tid = (long)in;
 
-for (int i = 0; i < num_centroids; i++) {
-        thread_aggregates[tid][i]->reset();
-      }
+  for (int i = 0; i < num_centroids; i++) {
+    thread_aggregates[tid][i]->reset();
+  }
 
-      int length = num_points;
-      int num_of_items_to_process = ceil((1.0 * length) / NUM_THREADS);
-      for (int i = tid * num_of_items_to_process;
-           i < (tid + 1) * num_of_items_to_process && i < length; i++) {
-        thread_aggregates[tid][(*points_cluster)[4 * i + 3]]->add_to_point(
-            (*points_cluster)[4 * i], (*points_cluster)[4 * i + 1],
-            (*points_cluster)[4 * i + 2]);
-      }
+  int length = num_points;
+  int num_of_items_to_process = ceil((1.0 * length) / NUM_THREADS);
+  for (int i = tid * num_of_items_to_process;
+       i < (tid + 1) * num_of_items_to_process && i < length; i++) {
+    thread_aggregates[tid][(*points_cluster)[4 * i + 3]]->add_to_point(
+        (*points_cluster)[4 * i], (*points_cluster)[4 * i + 1],
+        (*points_cluster)[4 * i + 2]);
+  }
   return NULL;
 }
 
@@ -43,47 +43,55 @@ void *find_centroid(void *in) {
   int tid = (long)in;
 
   int centroid_number = tid;
-      while (centroid_number < num_centroids) {
+  while (centroid_number < num_centroids) {
 
-        for (int i = 1; i < NUM_THREADS; i++) {
-          thread_aggregates[0][centroid_number]->accumulate_values(
-              thread_aggregates[i][centroid_number]);
-        }
-        thread_aggregates[0][centroid_number]->average_out_point();
+    for (int i = 1; i < NUM_THREADS; i++) {
+      thread_aggregates[0][centroid_number]->accumulate_values(
+          thread_aggregates[i][centroid_number]);
+    }
+    thread_aggregates[0][centroid_number]->average_out_point();
 
-        centroid_number += NUM_THREADS;
+    centroid_number += NUM_THREADS;
   }
 
   return NULL;
 }
 
-void *assign_centroids(void *in) {
+void *assign_centroids_and_aggregate_points(void *in) {
   int tid = (long)in;
 
+   for (int i = 0; i < num_centroids; i++) {
+    thread_aggregates[tid][i]->reset();
+  }
   int local_changes = 0;
 
-      int length = num_points;
-      int num_of_items_to_process = ceil((1.0 * length) / NUM_THREADS);
-      for (int i = tid * num_of_items_to_process;
-           i < (tid + 1) * num_of_items_to_process && i < length; i++) {
+  int length = num_points;
+  int num_of_items_to_process = ceil((1.0 * length) / NUM_THREADS);
+  for (int i = tid * num_of_items_to_process;
+       i < (tid + 1) * num_of_items_to_process && i < length; i++) {
 
-        double min_dist = __INT_MAX__;
-        int closest_centroid = -1;
-        int offset = (num_iters - 1) * num_centroids * 3;
-        for (int j = 0; j < num_centroids; j++) {
-          float dist = distance(data_points_loc, i, *centroids_loc, j, offset);
+    double min_dist = __INT_MAX__;
+    int closest_centroid = -1;
+    int offset = (num_iters - 1) * num_centroids * 3;
 
-          if (dist < min_dist) {
-            min_dist = dist;
-            closest_centroid = j;
-          }
-        }
+    for (int j = 0; j < num_centroids; j++) {
+      float dist = distance(data_points_loc, i, *centroids_loc, j, offset);
 
-        if (closest_centroid != (*points_cluster)[4 * i + 3]) {
-          (*points_cluster)[4 * i + 3] = closest_centroid;
-          local_changes++;
-        }
+      if (dist < min_dist) {
+        min_dist = dist;
+        closest_centroid = j;
       }
+    }
+
+    if (closest_centroid != (*points_cluster)[4 * i + 3]) {
+      (*points_cluster)[4 * i + 3] = closest_centroid;
+      local_changes++;
+    }
+
+      thread_aggregates[tid][(*points_cluster)[4 * i + 3]]->add_to_point(
+        (*points_cluster)[4 * i], (*points_cluster)[4 * i + 1],
+        (*points_cluster)[4 * i + 2]);
+  }
 
   pthread_mutex_lock(&mutex);
   num_changes += local_changes;
@@ -95,19 +103,17 @@ void *assign_centroids(void *in) {
 void *initialize(void *in) {
   int tid = (long)in;
 
-    int length = num_points;
-      int num_of_items_to_process = ceil((1.0 * length) / NUM_THREADS);
-      for (int i = tid * num_of_items_to_process;
-           i < (tid + 1) * num_of_items_to_process && i < length; i++) {
-        (*points_cluster)[4 * i] = data_points_loc[3 * i];
-        (*points_cluster)[4 * i + 1] = data_points_loc[3 * i + 1];
-        (*points_cluster)[4 * i + 2] = data_points_loc[3 * i + 2];
-        (*points_cluster)[4 * i + 3] = rand() % num_centroids;
-      }
+  int length = num_points;
+  int num_of_items_to_process = ceil((1.0 * length) / NUM_THREADS);
+  for (int i = tid * num_of_items_to_process;
+       i < (tid + 1) * num_of_items_to_process && i < length; i++) {
+    (*points_cluster)[4 * i] = data_points_loc[3 * i];
+    (*points_cluster)[4 * i + 1] = data_points_loc[3 * i + 1];
+    (*points_cluster)[4 * i + 2] = data_points_loc[3 * i + 2];
+  }
 
   return NULL;
 }
-
 
 void kmeans_pthread(int num_threads, int N, int K, int *data_points,
                     int **data_point_cluster, float **centroids,
@@ -136,41 +142,48 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
   pthread_t threads[NUM_THREADS];
 
   srand(1);
-    // Accumulating points values
-    for (int i = 0; i < NUM_THREADS; i++) {
-      return_code =
-          pthread_create(&threads[i], NULL, initialize, (void *)i);
-    }
 
-    // Wait for computations to complete
-    for (int i = 0; i < NUM_THREADS; i++) {
-      pthread_join(threads[i], NULL);
-    }
+  for (int i = 0; i < num_points; i++) {
+    (*points_cluster)[4 * i + 3] = rand() % num_centroids;
+  }
+  // Accumulating points values
+  for (int i = 0; i < NUM_THREADS; i++) {
+    return_code = pthread_create(&threads[i], NULL, initialize, (void *)i);
+  }
 
-    // Accumulating points values
-    for (int i = 0; i < NUM_THREADS; i++) {
-      return_code =
-          pthread_create(&threads[i], NULL, aggregrate_points, (void *)i);
-    }
+  // Wait for computations to complete
+  for (int i = 0; i < NUM_THREADS; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
-    // Wait for computations to complete
-    for (int i = 0; i < NUM_THREADS; i++) {
-      pthread_join(threads[i], NULL);
-    }
+  // Accumulating points values
+  for (int i = 0; i < NUM_THREADS; i++) {
+    return_code =
+        pthread_create(&threads[i], NULL, aggregrate_points, (void *)i);
+  }
 
-    // Find new Centroids by averaging points values
-    for (int i = 0; i < NUM_THREADS && i < K; i++) {
-      return_code = pthread_create(&threads[i], NULL, find_centroid, (void *)i);
-    }
+  // Wait for computations to complete
+  for (int i = 0; i < NUM_THREADS; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
-    // Wait for computations to complete
-    for (int i = 0; i < NUM_THREADS && i < K; i++) {
-      pthread_join(threads[i], NULL);
-    }
+  // Find new Centroids by averaging points values
+  for (int i = 0; i < NUM_THREADS && i < K; i++) {
+    return_code = pthread_create(&threads[i], NULL, find_centroid, (void *)i);
+  }
 
-    
+  // Wait for computations to complete
+  for (int i = 0; i < NUM_THREADS && i < K; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
-  int num_iters = 0;
+  for (int j = 0; j < K; j++) {
+    (*centroids)[3 * j] = thread_aggregates[0][j]->x;
+    (*centroids)[3 * j + 1] = thread_aggregates[0][j]->y;
+    (*centroids)[3 * j + 2] = thread_aggregates[0][j]->z;
+  }
+
+  num_iters = 0;
 
   do {
     num_iters++;
@@ -179,18 +192,7 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
     // Assign new closest centrois
     for (int i = 0; i < NUM_THREADS; i++) {
       return_code =
-          pthread_create(&threads[i], NULL, assign_centroids, (void *)i);
-    }
-
-    // Wait for computations to complete
-    for (int i = 0; i < NUM_THREADS; i++) {
-      pthread_join(threads[i], NULL);
-    }
-
-    // Accumulating points values
-    for (int i = 0; i < NUM_THREADS; i++) {
-      return_code =
-          pthread_create(&threads[i], NULL, aggregrate_points, (void *)i);
+          pthread_create(&threads[i], NULL, assign_centroids_and_aggregate_points, (void *)i);
     }
 
     // Wait for computations to complete
@@ -209,13 +211,11 @@ void kmeans_pthread(int num_threads, int N, int K, int *data_points,
     }
     int offset = num_iters * K * 3;
 
-      for (int j = 0; j < K; j++) {
-          (*centroids)[offset + 3 * j] = thread_aggregates[0][j]->x;
-          (*centroids)[offset + 3 * j + 1] = thread_aggregates[0][j]->y;
-          (*centroids)[offset + 3 * j + 2] = thread_aggregates[0][j]->z;
-        }
-
-
+    for (int j = 0; j < K; j++) {
+      (*centroids)[offset + 3 * j] = thread_aggregates[0][j]->x;
+      (*centroids)[offset + 3 * j + 1] = thread_aggregates[0][j]->y;
+      (*centroids)[offset + 3 * j + 2] = thread_aggregates[0][j]->z;
+    }
 
   } while (num_changes > 0.01 * num_points && num_iters < MAX_ITERS);
 

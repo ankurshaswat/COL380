@@ -4,7 +4,7 @@ using namespace std;
 
 float distance(int *data_points, int point_num, float *centroids,
                int centroid_num, int offset) {
-
+// cout<<data_points[3 * point_num]<<' '<<centroids[offset + 3 * centroid_num]<<' '<<offset<<endl;
   return sqrt(
       pow(data_points[3 * point_num] - centroids[offset + 3 * centroid_num],
           2) +

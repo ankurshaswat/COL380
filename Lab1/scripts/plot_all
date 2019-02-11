@@ -3,8 +3,8 @@ set terminal pdf
 set output "../results/Plots.pdf"
 set key left box
 
-set xlabel "Array size (*1024*1024)"
-set ylabel "Time"
+set xlabel "Array size"
+set ylabel "Time(sec)"
 
 set title "Sequential vs. Pthread" font ",20"
 plot "../results/time_sequential.txt" title "Sequential" with linespoints, "../results/time_pthread_2.txt" title "Pthread 2" with linespoints, "../results/time_pthread_4.txt" title "Pthread 4" with linespoints, "../results/time_pthread_8.txt" title "Pthread 8" with linespoints, "../results/time_pthread_16.txt" title "Pthread 16" with linespoints
