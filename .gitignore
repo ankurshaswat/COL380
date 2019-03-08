@@ -30,7 +30,8 @@
 *.exe
 *.out
 *.app
-Lab1/visualization_tools/*.txt
-Lab1/visualization_tools/env
-Lab1/results
-Lab1/dataset
+lab1/visualization_tools/*.txt
+lab1/visualization_tools/env
+lab1/results
+lab1/dataset
+lab2/code/pca
