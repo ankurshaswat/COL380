@@ -217,7 +217,7 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
         }
       }
 
-#pragma omp for reduction(max : diff)
+#pragma omp for collapse(2) reduction(max : diff)
       for (int i = 0; i < m; i++) {
         for (int j = 0; j < m; j++) {
           diff = fmax(fabs(eigen_vectors[INDEX(i, j, m)] -
