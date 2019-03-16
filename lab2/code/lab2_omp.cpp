@@ -7,8 +7,10 @@
 
 using namespace std;
 
-#define INDEX(i1, i2, l1) (i1 * l1 + i2)
 #define EPSILON 0.00001
+#define CUTOFF 1000
+
+inline int INDEX(int i1, int i2, int l1) { return i1 * l1 + i2; }
 
 void print(int m, int n, float *mat) {
   cout << endl;
@@ -92,109 +94,105 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
    * V (MxM)
    * M_V (NxM) */
 
-  float D_T[n][m];
-  float *M_T = D;
+  float D_T[n * m], *M_T = D, eigen_vectors[m * m], eigen_vectors_temp[m * m],
+                    SIGMA_INV[n], V[m * m], M_V[n * m], A[m * m], Q[m * m],
+                    A_temp[m * m], R[m * m];
+
   vector<pair<float, int>> eigen_values(m);
-  float eigen_vectors[m][m];
-  float eigen_vectors_temp[m][m];
-  float SIGMA_INV[n];
-  float V[m][m];
-  float M_V[n][m];
-  float A[m][m];
 
-  for (int i = 0; i < m; i++) {
-    for (int j = 0; j < m; j++) {
-      eigen_vectors[i][j] = 0;
-    }
-  }
-
-  // print(m,n,D);
-  /* Calculate D_T (an N x M matrix) */
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < m; j++) {
-      D_T[i][j] = D[INDEX(j, i, n)];
-    }
-  }
-  // print(n,m,D_T[0]);
-
-  /* From here on consider D_T to be M (an N x M matrix). We already have M_T
-   * which is D. Calculate M_T.M (an M x M matrix) */
-  for (int i = 0; i < m; i++) {
-    for (int j = 0; j < m; j++) {
-      float sum = 0;
-      for (int k = 0; k < n; k++) {
-        sum += M_T[INDEX(i, k, n)] * D_T[k][j];
-      }
-      A[i][j] = sum;
-    }
-  }
-  // print(m, m, M_T_M[0]);
-  print(m, m, A[0]);
-
-  /* Get Eigen values and eigen vectors of M_T.M */
-  for (int i = 0; i < m; i++) {
-    eigen_vectors[i][i] = 1;
-  }
-
-  float Q[m][m], A_temp[m][m];
-  float R[m][m] = {0};
-
-  while (true) /* Break on convergence */
+  // #pragma omp parallel default(none)                                             \
+    // shared(m, n, eigen_vectors, R, D, D_T, M_T, A) num_threads(1)
   {
+    // #pragma omp for collapse(2)
+    for (int i = 0; i < m; i++) {
+      for (int j = 0; j < m; j++) {
+        eigen_vectors[INDEX(i, j, m)] = 0;
+        R[INDEX(i, j, m)] = 0;
+      }
+    }
+
+    /* Calculate D_T (an N x M matrix) */
+    // #pragma omp for collapse(2)
+    for (int i = 0; i < n; i++) {
+      for (int j = 0; j < m; j++) {
+        D_T[INDEX(i, j, m)] = D[INDEX(j, i, n)];
+      }
+    }
+
+    /* From here on consider D_T to be M (an N x M matrix). We already have M_T
+     * which is D. Calculate M_T.M (an M x M matrix) */
+    // #pragma omp for collapse(2)
+    for (int i = 0; i < m; i++) {
+      for (int j = 0; j < m; j++) {
+        float sum = 0;
+        for (int k = 0; k < n; k++) {
+          sum += M_T[INDEX(i, k, n)] * D[INDEX(j, k, n)];
+        }
+        A[INDEX(i, j, m)] = sum;
+      }
+    }
+
+    /* Get Eigen values and eigen vectors of M_T.M */
+    // #pragma omp for
+    for (int i = 0; i < m; i++) {
+      eigen_vectors[INDEX(i, i, m)] = 1;
+    }
+  }
+
+  int count = 0;
+  while (count < CUTOFF) /* Break on convergence */
+  {
+    count++;
     /* Calculate Q and R */
     for (int i = 0; i < m; i++) {
       float u[m];
       float mod_u = 0;
       for (int j = 0; j < m; j++) {
-        u[j] = A[j][i];
+        u[j] = A[INDEX(j, i, m)];
         for (int k = i - 1; k >= 0; k--) {
-          u[j] -= R[k][i] * Q[j][k];
+          u[j] -= R[INDEX(k, i, m)] * Q[INDEX(j, k, m)];
         }
         mod_u += u[j] * u[j];
       }
       mod_u = sqrt(mod_u);
       if (mod_u > EPSILON) {
         for (int j = 0; j < m; j++) {
-          Q[j][i] = u[j] / mod_u;
+          Q[INDEX(j, i, m)] = u[j] / mod_u;
         }
       }
 
       for (int j = i; j < m; j++) {
-        R[i][j] = 0;
+        R[INDEX(i, j, m)] = 0;
         for (int k = 0; k < m; k++) {
-          R[i][j] += Q[k][i] * A[k][j];
+          R[INDEX(i, j, m)] += Q[INDEX(k, i, m)] * A[INDEX(k, j, m)];
         }
       }
     }
-
-    // cout<<"Q\n";
-    // print(m, m, Q[0]);
-    // cout<<"R\n";
-    // print(m, m, R[0]);
 
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < m; j++) {
         float sum1 = 0, sum2 = 0;
         for (int k = 0; k < n; k++) {
-          sum1 += eigen_vectors[i][k] * Q[k][j];
-          sum2 += R[i][k] * Q[k][j];
+          sum1 += eigen_vectors[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
+          sum2 += R[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
         }
-        eigen_vectors_temp[i][j] = sum1;
-        A_temp[i][j] = sum2;
+        eigen_vectors_temp[INDEX(i, j, m)] = sum1;
+        A_temp[INDEX(i, j, m)] = sum2;
       }
     }
 
     float diff = 0;
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < m; j++) {
-        diff = fmax(fabs(eigen_vectors[i][j] - eigen_vectors_temp[i][j]), diff);
-        diff = fmax(fabs(A[i][j] - A_temp[i][j]), diff);
-        eigen_vectors[i][j] = eigen_vectors_temp[i][j];
-        A[i][j] = A_temp[i][j];
+        diff = fmax(fabs(eigen_vectors[INDEX(i, j, m)] -
+                         eigen_vectors_temp[INDEX(i, j, m)]),
+                    diff);
+        diff = fmax(fabs(A[INDEX(i, j, m)] - A_temp[INDEX(i, j, m)]), diff);
+        eigen_vectors[INDEX(i, j, m)] = eigen_vectors_temp[INDEX(i, j, m)];
+        A[INDEX(i, j, m)] = A_temp[INDEX(i, j, m)];
       }
     }
-
-    // cout << diff << endl;
+    // cout<<diff<<' '<<count<<endl;
 
     /* Check for convergence and break */
     if (diff < EPSILON) {
@@ -204,7 +202,7 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
 
   // /* Update eigen values */
   for (int i = 0; i < m; i++) {
-    eigen_values[i].first = A[i][i];
+    eigen_values[i].first = A[INDEX(i, i, m)];
     eigen_values[i].second = i;
   }
 
@@ -213,28 +211,24 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
 
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < m; j++) {
-      V[i][j] = eigen_vectors[i][eigen_values[j].second];
+      V[INDEX(i, j, m)] = eigen_vectors[INDEX(i, eigen_values[j].second, m)];
     }
   }
 
-  // print(m, &eigen_values);
-  // print(m, m, eigen_vectors[0]);
-
-  /* Square root Eigen values to get Singular values. Put singular values along
-   * diagonal in descending order to get SIGMA (an M x M diagonal matrix) Get
-   * SIGMA_INV (an M x M diagonal matrix). */
+  /* Square root Eigen values to get Singular values. Put singular values
+   * along diagonal in descending order to get SIGMA (an M x M diagonal
+   * matrix) Get SIGMA_INV (an M x M diagonal matrix). */
 
   for (int i = 0; i < n; i++) {
     float singular_val = sqrt(eigen_values[i].first);
     (*SIGMA)[i] = singular_val;
     SIGMA_INV[i] = 1 / singular_val;
   }
-  print(n, *SIGMA);
 
   /* Get V_T */
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < m; j++) {
-      (*V_T)[INDEX(i, j, m)] = V[j][i];
+      (*V_T)[INDEX(i, j, m)] = V[INDEX(j, i, m)];
     }
   }
 
@@ -243,11 +237,11 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
     for (int j = 0; j < m; j++) {
       float sum = 0;
       for (int k = 0; k < m; k++) {
-        sum += D_T[i][k] * V[k][j];
+        sum += D_T[INDEX(i, k, m)] * V[INDEX(k, j, m)];
       }
-      M_V[i][j] = sum;
+      M_V[INDEX(i, j, m)] = sum;
       if (j < n) {
-        (*U)[INDEX(i, j, n)] = M_V[i][j] * SIGMA_INV[j];
+        (*U)[INDEX(i, j, n)] = M_V[INDEX(i, j, m)] * SIGMA_INV[j];
       } else {
         (*U)[INDEX(i, j, n)] = 0;
       }
@@ -267,7 +261,9 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
          float **D_HAT, int *K) {
 
   int k = 0;
+
   float stored_percentage = 0;
+
   for (int i = 0; i < n; i++) {
     stored_percentage += SIGMA[i];
     k++;
@@ -277,21 +273,21 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
   }
 
   *K = k;
-  *D_HAT = (float *)malloc(sizeof(float) * m * k);
-
-  float W[n][k];
+  float W[n * k];
 
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < k; j++) {
-      W[i][j] = U[INDEX(i, j, n)];
+      W[INDEX(i, j, k)] = U[INDEX(i, j, n)];
     }
   }
+
+  *D_HAT = (float *)malloc(sizeof(float) * m * k);
 
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < k; j++) {
       float sum = 0;
       for (int y = 0; y < n; y++) {
-        sum += D[INDEX(i, y, n)] * W[y][j];
+        sum += D[INDEX(i, y, n)] * W[INDEX(y, j, k)];
       }
       (*D_HAT)[INDEX(i, j, k)] = sum;
     }

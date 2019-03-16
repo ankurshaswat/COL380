@@ -1,1 +1,2 @@
-g++ -fopenmp -Wall -g -lm lab2_io.cpp lab2_omp.cpp main_omp.cpp -o pca ; ./pca $1 90
+g++ -fopenmp -Wall -g -lm lab2_io.cpp lab2_omp.cpp main_omp.cpp -o pca
+time ./pca $1 90
