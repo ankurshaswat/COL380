@@ -42,21 +42,36 @@ void merge_sort(vector<pair<float, int>> *array) {
   int size = array->size();
   if (size <= 1) {
     return;
+  } else if (size == 2) {
+    if ((*array)[0] < (*array)[1]) {
+      pair<float, int> temp = (*array)[0];
+      (*array)[0] = (*array)[1];
+      (*array)[1] = temp;
+    }
+    return;
   }
 
   int breaker = size / 2;
 
   vector<pair<float, int>> former, latter;
 
-  for (int i = 0; i < breaker; i++) {
-    former.push_back((*array)[i]);
+#pragma omp task default(none) shared(breaker, former, array)
+  {
+    for (int i = 0; i < breaker; i++) {
+      former.push_back((*array)[i]);
+    }
+    merge_sort(&former);
   }
-  merge_sort(&former);
 
-  for (int i = breaker; i < size; i++) {
-    latter.push_back((*array)[i]);
+#pragma omp task default(none) shared(breaker, size, latter, array)
+  {
+    for (int i = breaker; i < size; i++) {
+      latter.push_back((*array)[i]);
+    }
+    merge_sort(&latter);
   }
-  merge_sort(&latter);
+
+#pragma omp taskwait
 
   /* Merge Step */
   int p1 = 0, p2 = 0, p = 0;
@@ -97,12 +112,21 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
   float D_T[n * m], *M_T = D, eigen_vectors[m * m], eigen_vectors_temp[m * m],
                     SIGMA_INV[n], V[m * m], M_V[n * m], A[m * m], Q[m * m],
                     A_temp[m * m], R[m * m];
+  float u[m];
+  float diff = 0;
 
+  float mod_u = 0;
   vector<pair<float, int>> eigen_values(m);
 
-  // #pragma omp parallel default(none)                                             \
-    // shared(m, n, eigen_vectors, R, D, D_T, M_T, A) num_threads(1)
+  int count = 0;
+  float local_sum = 0, sum = 0;
+
+#pragma omp parallel default(none)                                             \
+    shared(m, n, eigen_vectors, R, D, D_T, M_T, A, count, sum, diff, u, Q,     \
+           mod_u, eigen_vectors_temp, A_temp, eigen_values, V)                 \
+        firstprivate(local_sum) num_threads(6)
   {
+
     // #pragma omp for collapse(2)
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < m; j++) {
@@ -111,17 +135,17 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
       }
     }
 
-    /* Calculate D_T (an N x M matrix) */
-    // #pragma omp for collapse(2)
+/* Calculate D_T (an N x M matrix) */
+#pragma omp for collapse(2)
     for (int i = 0; i < n; i++) {
       for (int j = 0; j < m; j++) {
         D_T[INDEX(i, j, m)] = D[INDEX(j, i, n)];
       }
     }
 
-    /* From here on consider D_T to be M (an N x M matrix). We already have M_T
-     * which is D. Calculate M_T.M (an M x M matrix) */
-    // #pragma omp for collapse(2)
+/* From here on consider D_T to be M (an N x M matrix). We already have M_T
+ * which is D. Calculate M_T.M (an M x M matrix) */
+#pragma omp for collapse(2)
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < m; j++) {
         float sum = 0;
@@ -132,86 +156,113 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
       }
     }
 
-    /* Get Eigen values and eigen vectors of M_T.M */
-    // #pragma omp for
+/* Get Eigen values and eigen vectors of M_T.M */
+#pragma omp for
     for (int i = 0; i < m; i++) {
       eigen_vectors[INDEX(i, i, m)] = 1;
     }
-  }
 
-  int count = 0;
-  while (count < CUTOFF) /* Break on convergence */
-  {
-    count++;
-    /* Calculate Q and R */
-    for (int i = 0; i < m; i++) {
-      float u[m];
-      float mod_u = 0;
-      for (int j = 0; j < m; j++) {
-        u[j] = A[INDEX(j, i, m)];
-        for (int k = i - 1; k >= 0; k--) {
-          u[j] -= R[INDEX(k, i, m)] * Q[INDEX(j, k, m)];
-        }
-        mod_u += u[j] * u[j];
+    while (count < CUTOFF) /* Break on convergence */
+    {
+
+#pragma omp single
+      {
+        count++;
+        diff = 0;
       }
-      mod_u = sqrt(mod_u);
-      if (mod_u > EPSILON) {
+
+      /* Calculate Q and R */
+      for (int i = 0; i < m; i++) {
+        local_sum = 0;
+
+#pragma omp for
         for (int j = 0; j < m; j++) {
-          Q[INDEX(j, i, m)] = u[j] / mod_u;
+          u[j] = A[INDEX(j, i, m)];
+          for (int k = i - 1; k >= 0; k--) {
+            u[j] -= R[INDEX(k, i, m)] * Q[INDEX(j, k, m)];
+          }
+          local_sum += u[j] * u[j];
+        }
+
+#pragma omp atomic
+        sum += local_sum;
+
+#pragma omp barrier
+
+#pragma omp single
+        {
+          mod_u = sqrt(sum);
+          sum = 0;
+        }
+
+#pragma omp for
+        for (int j = 0; j < m; j++) {
+          if (mod_u > EPSILON) {
+            Q[INDEX(j, i, m)] = u[j] / mod_u;
+          }
+        }
+
+#pragma omp for
+        for (int j = i; j < m; j++) {
+          R[INDEX(i, j, m)] = 0;
+          for (int k = 0; k < m; k++) {
+            R[INDEX(i, j, m)] += Q[INDEX(k, i, m)] * A[INDEX(k, j, m)];
+          }
         }
       }
 
-      for (int j = i; j < m; j++) {
-        R[INDEX(i, j, m)] = 0;
-        for (int k = 0; k < m; k++) {
-          R[INDEX(i, j, m)] += Q[INDEX(k, i, m)] * A[INDEX(k, j, m)];
+#pragma omp for collapse(2)
+      for (int i = 0; i < m; i++) {
+        for (int j = 0; j < m; j++) {
+          float sum1 = 0, sum2 = 0;
+          for (int k = 0; k < n; k++) {
+            sum1 += eigen_vectors[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
+            sum2 += R[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
+          }
+          eigen_vectors_temp[INDEX(i, j, m)] = sum1;
+          A_temp[INDEX(i, j, m)] = sum2;
         }
       }
+
+#pragma omp for reduction(max : diff)
+      for (int i = 0; i < m; i++) {
+        for (int j = 0; j < m; j++) {
+          diff = fmax(fabs(eigen_vectors[INDEX(i, j, m)] -
+                           eigen_vectors_temp[INDEX(i, j, m)]),
+                      diff);
+          diff = fmax(fabs(A[INDEX(i, j, m)] - A_temp[INDEX(i, j, m)]), diff);
+          eigen_vectors[INDEX(i, j, m)] = eigen_vectors_temp[INDEX(i, j, m)];
+          A[INDEX(i, j, m)] = A_temp[INDEX(i, j, m)];
+        }
+      }
+
+#pragma omp master
+      { printf("%.6f %d\n", diff, count); }
+
+      /* Check for convergence and break */
+      if (diff < EPSILON) {
+        break;
+      }
+
+#pragma omp barrier
     }
 
+/* Update eigen values */
+#pragma omp for
+    for (int i = 0; i < m; i++) {
+      eigen_values[i].first = A[INDEX(i, i, m)];
+      eigen_values[i].second = i;
+    }
+
+/* Sort Eigen values (and corresponding vectors) in descending order */
+#pragma omp single
+    merge_sort(&eigen_values);
+
+#pragma omp for collapse(2)
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < m; j++) {
-        float sum1 = 0, sum2 = 0;
-        for (int k = 0; k < n; k++) {
-          sum1 += eigen_vectors[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
-          sum2 += R[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
-        }
-        eigen_vectors_temp[INDEX(i, j, m)] = sum1;
-        A_temp[INDEX(i, j, m)] = sum2;
+        V[INDEX(i, j, m)] = eigen_vectors[INDEX(i, eigen_values[j].second, m)];
       }
-    }
-
-    float diff = 0;
-    for (int i = 0; i < m; i++) {
-      for (int j = 0; j < m; j++) {
-        diff = fmax(fabs(eigen_vectors[INDEX(i, j, m)] -
-                         eigen_vectors_temp[INDEX(i, j, m)]),
-                    diff);
-        diff = fmax(fabs(A[INDEX(i, j, m)] - A_temp[INDEX(i, j, m)]), diff);
-        eigen_vectors[INDEX(i, j, m)] = eigen_vectors_temp[INDEX(i, j, m)];
-        A[INDEX(i, j, m)] = A_temp[INDEX(i, j, m)];
-      }
-    }
-    // cout<<diff<<' '<<count<<endl;
-
-    /* Check for convergence and break */
-    if (diff < EPSILON) {
-      break;
-    }
-  }
-
-  // /* Update eigen values */
-  for (int i = 0; i < m; i++) {
-    eigen_values[i].first = A[INDEX(i, i, m)];
-    eigen_values[i].second = i;
-  }
-
-  /* Sort Eigen values (and corresponding vectors) in descending order */
-  merge_sort(&eigen_values);
-
-  for (int i = 0; i < m; i++) {
-    for (int j = 0; j < m; j++) {
-      V[INDEX(i, j, m)] = eigen_vectors[INDEX(i, eigen_values[j].second, m)];
     }
   }
 
@@ -247,9 +298,9 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
       }
     }
   }
-  // print(n, n, *U);
-  // print(m, *SIGMA);
-  // print(m, m, *V_T);
+  print(n, n, *U);
+  print(m, *SIGMA);
+  print(m, m, *V_T);
 }
 
 // /*
