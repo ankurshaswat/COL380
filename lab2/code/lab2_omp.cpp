@@ -15,7 +15,6 @@ void print(int m, int n, float *mat) {
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < n; j++) {
       printf("%.6f\t", mat[INDEX(i, j, n)]);
-      // cout <<  << '\t';
     }
     cout << endl;
   }
@@ -36,17 +35,6 @@ void print(int m, float *row) {
   }
   cout << endl;
 }
-// void merge_sort(int start, int end, float *array) {
-//   if (start <= end) {
-//     return;
-//   } else {
-//     int mid = (start + end) / 2;
-
-//     merge_sort(start, mid, array);
-//     merge_sort(mid + 1, end, array);
-//   }
-//   return;
-// }
 
 void merge_sort(vector<pair<float, int>> *array) {
   int size = array->size();
@@ -96,7 +84,8 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
    * D_T = M (NxM)
    * M_T_M (MxM)
    * U (NxN)
-   * SIGMA,SIGMA_INV (MxM)
+   * SIGMA (NxM)
+   * SIGMA_INV (MxN)
    * eigen values (Mx1)
    * num of eigen vectors = M
    * eigen_vectors (MxM)
@@ -108,8 +97,8 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
   vector<pair<float, int>> eigen_values(m);
   float eigen_vectors[m][m];
   float eigen_vectors_temp[m][m];
-  float SIGMA_INV[m];
-  float V[n][m];
+  float SIGMA_INV[n];
+  float V[m][m];
   float M_V[n][m];
   float A[m][m];
 
@@ -178,10 +167,10 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
       }
     }
 
-    cout<<"Q\n";
-    print(m, m, Q[0]);
-    cout<<"R\n";
-    print(m, m, R[0]);
+    // cout<<"Q\n";
+    // print(m, m, Q[0]);
+    // cout<<"R\n";
+    // print(m, m, R[0]);
 
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < m; j++) {
@@ -228,23 +217,23 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
     }
   }
 
-  print(m, &eigen_values);
-  print(m, m, eigen_vectors[0]);
+  // print(m, &eigen_values);
+  // print(m, m, eigen_vectors[0]);
 
   /* Square root Eigen values to get Singular values. Put singular values along
    * diagonal in descending order to get SIGMA (an M x M diagonal matrix) Get
    * SIGMA_INV (an M x M diagonal matrix). */
 
-  for (int i = 0; i < m; i++) {
+  for (int i = 0; i < n; i++) {
     float singular_val = sqrt(eigen_values[i].first);
     (*SIGMA)[i] = singular_val;
     SIGMA_INV[i] = 1 / singular_val;
   }
-  print(m, *SIGMA);
+  print(n, *SIGMA);
 
   /* Get V_T */
   for (int i = 0; i < m; i++) {
-    for (int j = 0; j < n; j++) {
+    for (int j = 0; j < m; j++) {
       (*V_T)[INDEX(i, j, m)] = V[j][i];
     }
   }
@@ -257,9 +246,16 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
         sum += D_T[i][k] * V[k][j];
       }
       M_V[i][j] = sum;
-      (*U)[INDEX(i, j, n)] = M_V[i][j] * SIGMA_INV[j];
+      if (j < n) {
+        (*U)[INDEX(i, j, n)] = M_V[i][j] * SIGMA_INV[j];
+      } else {
+        (*U)[INDEX(i, j, n)] = 0;
+      }
     }
   }
+  // print(n, n, *U);
+  // print(m, *SIGMA);
+  // print(m, m, *V_T);
 }
 
 // /*
@@ -295,9 +291,9 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
     for (int j = 0; j < k; j++) {
       float sum = 0;
       for (int y = 0; y < n; y++) {
-        sum += D[INDEX(i, y, m)] * W[y][j];
+        sum += D[INDEX(i, y, n)] * W[y][j];
       }
-      (*D_HAT)[INDEX(i, j, m)] = sum;
+      (*D_HAT)[INDEX(i, j, k)] = sum;
     }
   }
 }

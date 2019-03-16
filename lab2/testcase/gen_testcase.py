@@ -18,16 +18,17 @@
 
 
 from random import uniform
+import sys
 
-M = 2           # number of rows (samples) in input matrix D
-N = 2             # number of columns (features) in input matrix
+M = sys.argv[1]           # number of rows (samples) in input matrix D
+N = sys.argv[2]             # number of columns (features) in input matrix
 lrange = -100000    # lrange <= element of matrix
 urange = 100000     # element of matrix <= urange
 
 # number of elements in M x N matrix
 num_elements = M * N
 
-filename = 'testcase_' + str(M) + '_' + str(N)     #output filename
+filename = 'testcase_' + str(M) + '_' + str(N) + '.txt'     #output filename
 file = open(filename, 'w')
 
 # write size of matrix in first line of file

@@ -35,3 +35,4 @@ lab1/visualization_tools/env
 lab1/results
 lab1/dataset
 lab2/code/pca
+lab2/testcase/*.txt
