@@ -7,8 +7,8 @@
 
 using namespace std;
 
-#define EPSILON 0.00001
-#define CUTOFF 1000
+#define EPSILON 0.0001
+#define CUTOFF 100
 #define NUM_THREADS 4
 
 inline int INDEX(int i1, int i2, int l1) { return i1 * l1 + i2; }
@@ -119,7 +119,7 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
    * M_V (NxM) */
 
   float D_T[n * m], *M_T = D, eigen_vectors[m * m], eigen_vectors_temp[m * m],
-                    SIGMA_INV[n], M_V[n * m], A[m * m], Q_T[m * m], Q[m * m],
+                    SIGMA_INV[n], M_V[n * m], A_T[m * m], Q_T[m * m], Q[m * m],
                     A_temp[m * m], R[m * m], u[m], diff = 0, mod_u = 0, sum = 0;
 
   int count = 0;
@@ -127,7 +127,7 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
   vector<pair<float, int>> eigen_values(m);
 
 #pragma omp parallel default(none)                                             \
-    shared(m, n, eigen_vectors, R, D, D_T, M_T, A, count, sum, diff, u, Q,     \
+    shared(m, n, eigen_vectors, R, D, D_T, M_T, A_T, count, sum, diff, u, Q,   \
            mod_u, eigen_vectors_temp, A_temp, eigen_values, SIGMA, SIGMA_INV,  \
            V_T, U, M_V, Q_T) num_threads(NUM_THREADS)
   {
@@ -150,60 +150,40 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
         for (int k = 0; k < n; k++) {
           sum += M_T[INDEX(i, k, n)] * D[INDEX(j, k, n)];
         }
-        A[INDEX(i, j, m)] = sum;
+        A_T[INDEX(j, i, m)] = sum;
       }
     }
 
     /* Get Eigen values and eigen vectors of M_T.M */
     while (count < CUTOFF) /* Break on convergence */
     {
-      /* Calculate Q and R */
-      for (int i = 0; i < m; i++) {
-
-#pragma omp for reduction(+ : sum)
-        for (int j = 0; j < m; j++) {
-          u[j] = A[INDEX(j, i, m)];
-          for (int k = 0; k < i; k++) {
-            u[j] -= R[INDEX(k, i, m)] * Q[INDEX(j, k, m)];
-          }
-          sum += u[j] * u[j];
-        }
-
+#pragma omp barrier
 #pragma omp single
-        {
+      {
+        count++;
+        diff = 0;
+        /* Calculate Q and R */
+        for (int i = 0; i < m; i++) {
+          for (int k = 0; k < i; k++) {
+            R[INDEX(k, i, m)] = 0;
+            for (int j = 0; j < m; j++) {
+              R[INDEX(k, i, m)] += Q_T[INDEX(k, j, m)] * A_T[INDEX(i, j, m)];
+            }
+            for (int j = 0; j < m; j++) {
+              A_T[INDEX(i, j, m)] -= R[INDEX(k, i, m)] * Q_T[INDEX(k, j, m)];
+            }
+          }
+          for (int j = 0; j < m; j++) {
+            sum += A_T[INDEX(i, j, m)] * A_T[INDEX(i, j, m)];
+          }
           mod_u = sqrt(sum);
           sum = 0;
-          if (i == 0) {
-            count++;
-            diff = 0;
-          }
-        }
-
-#pragma omp for
-        for (int k = 0; k < m; k++) {
-          if (mod_u > EPSILON) {
-            Q[INDEX(k, i, m)] = u[k] / mod_u;
-            Q_T[INDEX(i, k, m)] = u[k] / mod_u;
-          } else {
-            Q[INDEX(k, i, m)] = u[k];
-            Q_T[INDEX(i, k, m)] = u[k];
-          }
-        }
-
-#pragma omp for
-        for (int j = i; j < m; j++) {
-
-          R[INDEX(i, j, m)] = 0;
-          if (j == i) {
-            R[INDEX(i, j, m)] = mod_u;
-          } else {
-            for (int k = 0; k < m; k++) {
-              R[INDEX(i, j, m)] += Q_T[INDEX(i, k, m)] * A[INDEX(k, j, m)];
-            }
+          R[INDEX(i, i, m)] = mod_u;
+          for (int j = 0; j < m; j++) {
+            Q_T[INDEX(i, j, m)] = A_T[INDEX(i, j, m)] / mod_u;
           }
         }
       }
-
 #pragma omp for collapse(2)
       for (int i = 0; i < m; i++) {
         for (int j = 0; j < m; j++) {
@@ -224,22 +204,25 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
           diff = fmax(fabs(eigen_vectors[INDEX(i, j, m)] -
                            eigen_vectors_temp[INDEX(i, j, m)]),
                       diff);
-          // if (i == j && i < n) {
-          diff = fmax(fabs(A[INDEX(i, j, m)] - A_temp[INDEX(i, j, m)]), diff);
-          // }
-          eigen_vectors[INDEX(i, j, m)] = eigen_vectors_temp[INDEX(i, j, m)];
-          A[INDEX(i, j, m)] = A_temp[INDEX(i, j, m)];
+          diff = fmax(fabs(A_T[INDEX(j, i, m)] - A_temp[INDEX(i, j, m)]), diff);
+          if (fabs(eigen_vectors_temp[INDEX(i, j, m)]) > EPSILON) {
+            eigen_vectors[INDEX(i, j, m)] = eigen_vectors_temp[INDEX(i, j, m)];
+          } else {
+            eigen_vectors[INDEX(i, j, m)] = 0;
+          }
+
+          if (fabs(A_temp[INDEX(i, j, m)]) > EPSILON) {
+            A_T[INDEX(j, i, m)] = A_temp[INDEX(i, j, m)];
+          } else {
+            A_T[INDEX(j, i, m)] = 0;
+          }
         }
       }
 
 #pragma omp master
       {
         printf("\n%.6f %d\n", diff, count);
-        // print(1, 10, Q_T);
-        // print(m, m, Q);
-        // print(m, m, Q_T);
-        // print(m, m, R);
-        printDiag(m, A, n);
+        printDiag(m, A_T, n + 3);
       }
 
       /* Check for convergence and break */
@@ -248,12 +231,10 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
       }
     }
 
-    // print(m, m, eigen_vectors);
-
 /* Update eigen values */
 #pragma omp for
     for (int i = 0; i < m; i++) {
-      eigen_values[i].first = A[INDEX(i, i, m)];
+      eigen_values[i].first = A_T[INDEX(i, i, m)];
       eigen_values[i].second = i;
     }
 
@@ -297,10 +278,8 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
     }
   }
 
-  print(n, m, M_V);
   print(n, n, *U);
   print(n, *SIGMA);
-  print(m, m, *V_T);
 }
 
 // /*
@@ -310,17 +289,23 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
 // */
 void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
          float **D_HAT, int *K) {
-  int k = 0;
 
-  float stored_percentage = 0;
+  int k = 0;
+  float stored_percentage = 0, total_percentage = 0;
 
   for (int i = 0; i < n; i++) {
-    stored_percentage += SIGMA[i];
+    total_percentage += SIGMA[i] * SIGMA[i];
+  }
+
+  for (int i = 0; i < n; i++) {
+    stored_percentage += 100 * (SIGMA[i] * SIGMA[i]) / total_percentage;
+    cout << (SIGMA[i] * SIGMA[i]) / total_percentage << endl;
     k++;
     if (stored_percentage >= retention) {
       break;
     }
   }
+
   *K = k;
   float W_T[k * n];
   *D_HAT = (float *)malloc(sizeof(float) * m * k);
@@ -347,4 +332,6 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
       }
     }
   }
+
+  // print(k, n, W_T);
 }
