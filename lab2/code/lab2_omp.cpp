@@ -9,6 +9,7 @@ using namespace std;
 
 #define EPSILON 0.00001
 #define CUTOFF 1000
+#define NUM_THREADS 4
 
 inline int INDEX(int i1, int i2, int l1) { return i1 * l1 + i2; }
 
@@ -110,10 +111,8 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
    * M_V (NxM) */
 
   float D_T[n * m], *M_T = D, eigen_vectors[m * m], eigen_vectors_temp[m * m],
-                    SIGMA_INV[n], V[m * m], M_V[n * m], A[m * m], Q[m * m],
-                    A_temp[m * m], R[m * m];
-  float u[m];
-  float diff = 0;
+                    SIGMA_INV[n], M_V[n * m], A[m * m], Q_T[m * m], Q[m * m],
+                    A_temp[m * m], R[m * m], u[m], diff = 0;
 
   float mod_u = 0;
   vector<pair<float, int>> eigen_values(m);
@@ -123,31 +122,24 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
 
 #pragma omp parallel default(none)                                             \
     shared(m, n, eigen_vectors, R, D, D_T, M_T, A, count, sum, diff, u, Q,     \
-           mod_u, eigen_vectors_temp, A_temp, eigen_values, V, SIGMA,          \
-           SIGMA_INV, V_T, U, M_V) firstprivate(local_sum) num_threads(4)
+           mod_u, eigen_vectors_temp, A_temp, eigen_values, SIGMA, SIGMA_INV,  \
+           V_T, U, M_V, Q_T) firstprivate(local_sum) num_threads(NUM_THREADS)
   {
 
-    // #pragma omp for collapse(2)
+#pragma omp for collapse(2)
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < m; j++) {
-        eigen_vectors[INDEX(i, j, m)] = 0;
+
+        eigen_vectors[INDEX(i, j, m)] = (i == j);
         R[INDEX(i, j, m)] = 0;
-      }
-    }
 
-/* Calculate D_T (an N x M matrix) */
-#pragma omp for collapse(2)
-    for (int i = 0; i < n; i++) {
-      for (int j = 0; j < m; j++) {
-        D_T[INDEX(i, j, m)] = D[INDEX(j, i, n)];
-      }
-    }
+        if (i < n) {
+          /* Calculate D_T (an N x M matrix) */
+          D_T[INDEX(i, j, m)] = D[INDEX(j, i, n)];
+        }
 
-/* From here on consider D_T to be M (an N x M matrix). We already have M_T
- * which is D. Calculate M_T.M (an M x M matrix) */
-#pragma omp for collapse(2)
-    for (int i = 0; i < m; i++) {
-      for (int j = 0; j < m; j++) {
+        /* From here on consider D_T to be M (an N x M matrix). We already have
+         * M_T which is D. Calculate M_T.M (an M x M matrix) */
         float sum = 0;
         for (int k = 0; k < n; k++) {
           sum += M_T[INDEX(i, k, n)] * D[INDEX(j, k, n)];
@@ -156,12 +148,7 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
       }
     }
 
-/* Get Eigen values and eigen vectors of M_T.M */
-#pragma omp for
-    for (int i = 0; i < m; i++) {
-      eigen_vectors[INDEX(i, i, m)] = 1;
-    }
-
+    /* Get Eigen values and eigen vectors of M_T.M */
     while (count < CUTOFF) /* Break on convergence */
     {
 #pragma omp barrier
@@ -197,31 +184,36 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
         }
 
 #pragma omp for
-        for (int j = 0; j < m; j++) {
+        for (int k = 0; k < m; k++) {
           if (mod_u > EPSILON) {
-            Q[INDEX(j, i, m)] = u[j] / mod_u;
+            Q[INDEX(k, i, m)] = u[k] / mod_u;
+            Q_T[INDEX(i, k, m)] = u[k] / mod_u;
           }
         }
 
 #pragma omp for
         for (int j = i; j < m; j++) {
+
           R[INDEX(i, j, m)] = 0;
           for (int k = 0; k < m; k++) {
-            R[INDEX(i, j, m)] += Q[INDEX(k, i, m)] * A[INDEX(k, j, m)];
+            R[INDEX(i, j, m)] += Q_T[INDEX(i, k, m)] * A[INDEX(k, j, m)];
           }
+          
         }
       }
 
 #pragma omp for collapse(2)
       for (int i = 0; i < m; i++) {
         for (int j = 0; j < m; j++) {
+
           float sum1 = 0, sum2 = 0;
           for (int k = 0; k < n; k++) {
-            sum1 += eigen_vectors[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
-            sum2 += R[INDEX(i, k, m)] * Q[INDEX(k, j, m)];
+            sum1 += eigen_vectors[INDEX(i, k, m)] * Q_T[INDEX(j, k, m)];
+            sum2 += R[INDEX(i, k, m)] * Q_T[INDEX(j, k, m)];
           }
           eigen_vectors_temp[INDEX(i, j, m)] = sum1;
           A_temp[INDEX(i, j, m)] = sum2;
+
         }
       }
 
@@ -257,28 +249,21 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
 #pragma omp single
     merge_sort(&eigen_values);
 
-#pragma omp for collapse(2)
-    for (int i = 0; i < m; i++) {
-      for (int j = 0; j < m; j++) {
-        V[INDEX(i, j, m)] = eigen_vectors[INDEX(i, eigen_values[j].second, m)];
-      }
-    }
-
-    /* Square root Eigen values to get Singular values. Put singular values
-     * along diagonal in descending order to get SIGMA (an M x M diagonal
-     * matrix) Get SIGMA_INV (an M x M diagonal matrix). */
 #pragma omp for
-    for (int i = 0; i < n; i++) {
-      float singular_val = sqrt(eigen_values[i].first);
-      (*SIGMA)[i] = singular_val;
-      SIGMA_INV[i] = 1 / singular_val;
-    }
-
-/* Get V_T */
-#pragma omp for collapse(2)
     for (int i = 0; i < m; i++) {
+
       for (int j = 0; j < m; j++) {
-        (*V_T)[INDEX(i, j, m)] = V[INDEX(j, i, m)];
+        (*V_T)[INDEX(i, j, m)] =
+            eigen_vectors[INDEX(j, eigen_values[i].second, m)];
+      }
+
+      if (i < n) {
+        /* Square root Eigen values to get Singular values. Put singular values
+         * along diagonal in descending order to get SIGMA (an M x M diagonal
+         * matrix) Get SIGMA_INV (an M x M diagonal matrix). */
+        float singular_val = sqrt(eigen_values[i].first);
+        (*SIGMA)[i] = singular_val;
+        SIGMA_INV[i] = 1 / singular_val;
       }
     }
 
@@ -286,11 +271,13 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
 #pragma omp for collapse(2)
     for (int i = 0; i < n; i++) {
       for (int j = 0; j < m; j++) {
+
         float sum = 0;
         for (int k = 0; k < m; k++) {
-          sum += D_T[INDEX(i, k, m)] * V[INDEX(k, j, m)];
+          sum += D_T[INDEX(i, k, m)] * (*V_T)[INDEX(j, k, m)];
         }
         M_V[INDEX(i, j, m)] = sum;
+
         if (j < n) {
           (*U)[INDEX(i, j, n)] = M_V[INDEX(i, j, m)] * SIGMA_INV[j];
         } else {
@@ -300,9 +287,9 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
     }
   }
 
-  // print(n, n, *U);
-  // print(m, *SIGMA);
-  // print(m, m, *V_T);
+  print(n, n, *U);
+  print(m, *SIGMA);
+  print(m, m, *V_T);
 }
 
 // /*
@@ -326,17 +313,17 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
   }
 
   *K = k;
-  float W[n * k];
+  float W_T[k * n];
   *D_HAT = (float *)malloc(sizeof(float) * m * k);
 
-#pragma omp parallel default(none) shared(n, m, D_HAT, D, U, W, k)             \
-    num_threads(4)
+#pragma omp parallel default(none) shared(n, m, D_HAT, D, U, W_T, k)           \
+    num_threads(NUM_THREADS)
   {
 
 #pragma omp for collapse(2)
-    for (int i = 0; i < n; i++) {
-      for (int j = 0; j < k; j++) {
-        W[INDEX(i, j, k)] = U[INDEX(i, j, n)];
+    for (int i = 0; i < k; i++) {
+      for (int j = 0; j < n; j++) {
+        W_T[INDEX(i, j, n)] = U[INDEX(j, i, n)];
       }
     }
 
@@ -345,7 +332,7 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
       for (int j = 0; j < k; j++) {
         float sum = 0;
         for (int y = 0; y < n; y++) {
-          sum += D[INDEX(i, y, n)] * W[INDEX(y, j, k)];
+          sum += D[INDEX(i, y, n)] * W_T[INDEX(j, y, n)];
         }
         (*D_HAT)[INDEX(i, j, k)] = sum;
       }
