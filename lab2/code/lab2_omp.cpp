@@ -118,9 +118,19 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
    * V (MxM)
    * M_V (NxM) */
 
-  float D_T[n * m], *M_T = D, eigen_vectors[m * m], eigen_vectors_temp[m * m],
-                    SIGMA_INV[n], M_V[n * m], A_T[m * m], Q_T[m * m], Q[m * m],
-                    A_temp[m * m], R[m * m], u[m], diff = 0, mod_u = 0, sum = 0;
+  float *M_T = D;
+  float *D_T = (float *)malloc(sizeof(float) * n * m);
+  float *eigen_vectors = (float *)malloc(sizeof(float) * m * m);
+  float *eigen_vectors_temp = (float *)malloc(sizeof(float) * m * m);
+  float *SIGMA_INV = (float *)malloc(sizeof(float) * n);
+  float *M_V = (float *)malloc(sizeof(float) * n * m);
+  float *A_T = (float *)malloc(sizeof(float) * m * m);
+  float *Q_T = (float *)malloc(sizeof(float) * m * m);
+  float *Q = (float *)malloc(sizeof(float) * m * m);
+  float *A_temp = (float *)malloc(sizeof(float) * m * m);
+  float *R = (float *)malloc(sizeof(float) * m * m);
+  float *u = (float *)malloc(sizeof(float) * m);
+  float diff = 0, mod_u = 0, sum = 0;
 
   int count = 0;
 
@@ -153,7 +163,7 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
         A_T[INDEX(j, i, m)] = sum;
       }
     }
-
+    double c, s, mod, a1, a2, mem1, mem2;
     /* Get Eigen values and eigen vectors of M_T.M */
     while (count < CUTOFF) /* Break on convergence */
     {
@@ -163,6 +173,36 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
         count++;
         diff = 0;
         /* Calculate Q and R */
+        // for (int j = 0; j < m; j++) {
+        //   for (int i = j + 1; i < m; i++) {
+        //     c = R[INDEX(j, j, m)];
+        //     s = -1 * R[INDEX(i, j, m)];
+        //     mod = sqrt(c * c + s * s);
+        //     c /= mod;
+        //     s /= mod;
+
+        //     // do multiplication for q and r
+
+        //     // #pragma omp parallel for
+        //     for (int k = 0; k < m; k++) {
+        //       a1 = R[INDEX(j, k, m)];
+        //       a2 = R[INDEX(i, k, m)];
+        //       R[INDEX(j, k, m)] = c * a1 - s * a2;
+        //       R[INDEX(i, k, m)] = s * a1 + c * a2;
+
+        //       mem1 = Q[INDEX(k, j, m)] * c - Q[INDEX(k, i, m)] * s;
+        //       mem2 = Q[INDEX(k, i, m)] * c + Q[INDEX(k, j, m)] * s;
+        //       Q[INDEX(k, j, m)] = mem1;
+        //       Q[INDEX(k, i, m)] = mem2;
+        //       Q_T[INDEX(j, k, m)] = mem1;
+        //       Q_T[INDEX(i, k, m)] = mem2;
+        //     }
+
+        //     // print(m, m, Q);
+        //     // print(m, m, R);
+        //     R[INDEX(i, j, m)] = 0;
+        //   }
+        // }
         for (int i = 0; i < m; i++) {
           for (int k = 0; k < i; k++) {
             R[INDEX(k, i, m)] = 0;
@@ -222,7 +262,7 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
 #pragma omp master
       {
         printf("\n%.6f %d\n", diff, count);
-        printDiag(m, A_T, n + 3);
+        // printDiag(m, A_T, n + 3);
       }
 
       /* Check for convergence and break */
@@ -278,8 +318,20 @@ void SVD(int m, int n, float *D, float **U, float **SIGMA, float **V_T) {
     }
   }
 
-  print(n, n, *U);
-  print(n, *SIGMA);
+  free(D_T);
+  free(eigen_vectors);
+  free(eigen_vectors_temp);
+  free(SIGMA_INV);
+  free(M_V);
+  free(A_T);
+  free(Q_T);
+  free(Q);
+  free(A_temp);
+  free(R);
+  free(u);
+
+  // print(n, n, *U);
+  // print(n, *SIGMA);
 }
 
 // /*
@@ -299,7 +351,7 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
 
   for (int i = 0; i < n; i++) {
     stored_percentage += 100 * (SIGMA[i] * SIGMA[i]) / total_percentage;
-    cout << (SIGMA[i] * SIGMA[i]) / total_percentage << endl;
+    // cout << (SIGMA[i] * SIGMA[i]) / total_percentage << endl;
     k++;
     if (stored_percentage >= retention) {
       break;
@@ -333,5 +385,6 @@ void PCA(int retention, int m, int n, float *D, float *U, float *SIGMA,
     }
   }
 
-  // print(k, n, W_T);
+  printf("%d\n", k);
+  print(n, SIGMA);
 }
