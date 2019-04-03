@@ -90,9 +90,10 @@ void JACOBI() {
     int numBlocks = (k-1 + BLOCKSIZE - 1) / BLOCKSIZE;
 
     // Can be parallelized
-    for (i = 0; i < k; i++) {
-      ROTATE(i, k, i, l, c, s);
-    }
+    ROTATE_MULTIPLE<<numBlocks,BLOCKSIZE>>()
+    // for (i = 0; i < k; i++) {
+      // ROTATE(i, k, i, l, c, s);
+    // }
 
     // Can be parallelized
     for (i = k + 1; i < l; i++) {
