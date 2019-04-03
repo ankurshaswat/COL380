@@ -16,7 +16,7 @@ int MAXIND(int k) {
   return m;
 }
 
-void UPDATE(int k, double t) {
+__global__ void UPDATE(int k, double t) {
   double y = e[k];
   e[k] = y + t;
   if (changed[k] && y == e[k]) {
@@ -38,15 +38,18 @@ void JACOBI() {
   int i, j, k, m, l;
   double p, y, d, r, c, s, t, Eik, Eil;
 
+  // Can be parallelized
   for (i = 0; i < N; i++) {
     for (j = 0; j < N; j++) {
       E[INDEX(i, j, N, N)] = (i == j);
     }
   }
 
+  // Single
   state = N;
 
-  for (k = 0; k < N; k++) {
+  // Can be easily parallelized
+  for (k = 0; k < N - 1; k++) {
     ind[k] = MAXIND(k);
     e[k] = S[INDEX(k, k, N, N)];
     changed[k] = true;
@@ -55,12 +58,14 @@ void JACOBI() {
   while (state != 0) {
     m = 0;
 
+    // Parallelize
     for (k = 1; k < N; k++) {
       if (fabs(S[INDEX(k, ind[k], N, N)]) > fabs(S[INDEX(m, ind[m], N, N)])) {
         m = k;
       }
     }
 
+    // Single
     k = m;
     l = ind[m];
     p = S[INDEX(k, l, N, N)];
@@ -78,24 +83,35 @@ void JACOBI() {
 
     S[INDEX(k, l, N, N)] = 0.0;
 
-    UPDATE(k, -t);
-    UPDATE(l, t);
+    UPDATE<<1,1>>(k, -t);
+    UPDATE<<1,1>>(l, t);
 
+    // int blockSize = 256;
+    int numBlocks = (k-1 + BLOCKSIZE - 1) / BLOCKSIZE;
+
+    // Can be parallelized
     for (i = 0; i < k; i++) {
       ROTATE(i, k, i, l, c, s);
     }
+
+    // Can be parallelized
     for (i = k + 1; i < l; i++) {
       ROTATE(k, i, i, l, c, s);
     }
+    
+    // Can be parallelized
     for (i = l + 1; i < N; i++) {
       ROTATE(k, i, l, i, c, s);
     }
+
+    // Parallelize Easily
     for (i = 0; i < N; i++) {
       Eik = E[INDEX(i, k, N, N)];
       Eil = E[INDEX(i, l, N, N)];
       E[INDEX(i, k, N, N)] = c * Eik - s * Eil;
       E[INDEX(i, l, N, N)] = s * Eik + c * Eil;
     }
+
     ind[k] = MAXIND(k);
     ind[l] = MAXIND(l);
   }
@@ -182,17 +198,17 @@ void SORT(double *e, double *E, int n) {
 void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
                  double **V_T, double **D_HAT, int *K, int retention) {
 
-  double *M = D;
-  double *M_T = (double *)malloc(sizeof(double) * m * n);
-  S = (double *)malloc(sizeof(double) * n * n);
-  E = (double *)malloc(sizeof(double) * n * n);
-  e = (double *)malloc(sizeof(double) * n);
-  double *SIGMA_INV = (double *)malloc(sizeof(double) * n);
-  double *MV = (double *)malloc(sizeof(double) * m * n);
+  double *M = D, *M_T, *SIGMA_INV, *MV;
   double sum, sqrt_;
   double eigen_total = 0;
-
   int i, j, k;
+
+  cudaMalloc(&M_T, sizeof(double) * m * n);
+  cudaMalloc(&S, sizeof(double) * n * n);
+  cudaMalloc(&E, sizeof(double) * n * n);
+  cudaMalloc(&e, sizeof(double) * n);
+  cudaMalloc(&SIGMA_INV, sizeof(double) * n);
+  cudaMalloc(&MV, sizeof(double) * m * n);
 
   N = n;
 
@@ -255,12 +271,12 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   *K = k;
 
-  free(W);
-  free(M_T);
-  free(S);
-  free(E);
-  free(e);
-  free(SIGMA_INV);
-  free(V_T);
-  free(MV);
+  cudaFree(W);
+  cudaFree(M_T);
+  cudaFree(S);
+  cudaFree(E);
+  cudaFree(e);
+  cudaFree(SIGMA_INV);
+  cudaFree(V_T);
+  cudaFree(MV);
 }
