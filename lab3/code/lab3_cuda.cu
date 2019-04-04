@@ -14,9 +14,9 @@ __device__ void MAXIND(int k, int N, double *S, int *result) {
   *result = m;
 }
 
-__global__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
+__device__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
   double y = e[k];
-  e[k] = y + t;
+  e[k] = y - t;
   if (changed[k] && y == e[k]) {
     changed[k] = false;
     (*state)--;
@@ -24,6 +24,13 @@ __global__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
     changed[k] = true;
     (*state)++;
   }
+  printf("%d statedd\n", *state);
+}
+
+__global__ void UPDATE_SPECIAL(int *k, int *l, double *t, double *e,
+                               bool *changed, int *state) {
+  UPDATE(*k, -1 * (*t), e, changed, state);
+  UPDATE(*l, *t, e, changed, state);
 }
 
 __device__ void ROTATE(int k, int l, int i, int j, double c, double s,
@@ -68,11 +75,11 @@ __global__ void BEST_M(int *m, int N, double *S, int *ind) {
   }
 }
 
-__global__ void GET_S_C(int *k, int *l, int m, double *c, double *s, double *t,
+__global__ void GET_S_C(int *k, int *l, int *m, double *c, double *s, double *t,
                         int N, int *ind, double *S, double *e) {
   // Single
-  *k = m;
-  *l = ind[m];
+  *k = *m;
+  *l = ind[*m];
   double p = S[INDEX(*k, *l, N, N)];
   double y = (e[*l] - e[*k]) / 2;
   double d = fabs(y) + sqrt(p * p + y * y);
@@ -90,48 +97,49 @@ __global__ void GET_S_C(int *k, int *l, int m, double *c, double *s, double *t,
   S[INDEX(*k, *l, N, N)] = 0.0;
 }
 
-__global__ void ROTATE_MULTIPLE1(int k, int l, double c, double s, double *S,
-                                 int N) {
+__global__ void ROTATE_MULTIPLE1(int *k, int *l, double *c, double *s,
+                                 double *S, int N) {
   int i;
   // Can be parallelized
-  for (i = 0; i < k; i++) {
-    ROTATE(i, k, i, l, c, s, S, N);
+  for (i = 0; i < *k; i++) {
+    ROTATE(i, *k, i, *l, *c, *s, S, N);
   }
 }
 
-__global__ void ROTATE_MULTIPLE2(int k, int l, double c, double s, double *S,
-                                 int N) {
+__global__ void ROTATE_MULTIPLE2(int *k, int *l, double *c, double *s,
+                                 double *S, int N) {
   int i;
   // Can be parallelized
-  for (i = k + 1; i < l; i++) {
-    ROTATE(k, i, i, l, c, s, S, N);
+  for (i = (*k) + 1; i < *l; i++) {
+    ROTATE(*k, i, i, *l, *c, *s, S, N);
   }
 }
 
-__global__ void ROTATE_MULTIPLE3(int k, int l, double c, double s, double *S,
-                                 int N) {
+__global__ void ROTATE_MULTIPLE3(int *k, int *l, double *c, double *s,
+                                 double *S, int N) {
   int i;
   // Can be parallelized
-  for (i = l + 1; i < N; i++) {
-    ROTATE(k, i, l, i, c, s, S, N);
+  for (i = (*l) + 1; i < N; i++) {
+    ROTATE(*k, i, *l, i, *c, *s, S, N);
   }
 }
 
-__global__ void UPDATE_E(int N, double *E, int k, int l, double c, double s) {
+__global__ void UPDATE_E(int N, double *E, int *k, int *l, double *c,
+                         double *s) {
   double Eik, Eil;
   int i;
   // Parallelize Easily
   for (i = 0; i < N; i++) {
-    Eik = E[INDEX(i, k, N, N)];
-    Eil = E[INDEX(i, l, N, N)];
-    E[INDEX(i, k, N, N)] = c * Eik - s * Eil;
-    E[INDEX(i, l, N, N)] = s * Eik + c * Eil;
+    Eik = E[INDEX(i, *k, N, N)];
+    Eil = E[INDEX(i, *l, N, N)];
+    E[INDEX(i, *k, N, N)] = (*c) * Eik - (*s) * Eil;
+    E[INDEX(i, *l, N, N)] = (*s) * Eik + (*c) * Eil;
   }
 }
 
-__global__ void UPDATE_IND(int k, int l, int *ind, int N, double *S) {
-  MAXIND(k, N, S, &ind[k]);
-  MAXIND(l, N, S, &ind[l]);
+__global__ void UPDATE_IND(int *k, int *l, int *ind, int N, double *S) {
+  MAXIND(*k, N, S, &ind[*k]);
+  MAXIND(*l, N, S, &ind[*l]);
 }
 
 __global__ void TRANSPOSE(double *M, int m, int n, double *M_T) {
@@ -208,6 +216,7 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   int *dev_state, *dev_ind, *dev_m, *dev_k, *dev_l;
   double *dev_c, *dev_s, *dev_t_;
   bool *dev_changed;
+  int state = n;
 
   cudaMalloc(&dev_E, sizeof(double) * n * n);
   cudaMalloc(&dev_state, sizeof(int));
@@ -221,27 +230,40 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   cudaMalloc(&dev_s, sizeof(double));
   cudaMalloc(&dev_t_, sizeof(double));
 
+  printf("Starting INIT\n");
+
   INIT1<<<1, 1>>>(n, dev_E);
   INIT2<<<1, 1>>>(dev_state, n);
   INIT3<<<1, 1>>>(dev_ind, dev_e, dev_S, n, dev_changed);
 
-  while (dev_state != 0) {
+  printf("Starting WHILE loop\n");
+
+  int count = 0;
+
+  while (state != 0 && count < 100) {
+    count++;
+    printf("%d val of dev_state\n", state);
 
     BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
 
-    GET_S_C<<<1, 1>>>(dev_k, dev_l, *dev_m, dev_c, dev_s, dev_t_, n, dev_ind,
+    GET_S_C<<<1, 1>>>(dev_k, dev_l, dev_m, dev_c, dev_s, dev_t_, n, dev_ind,
                       dev_S, dev_e);
 
-    UPDATE<<<1, 1>>>(*dev_k, -(*dev_t_), dev_e, dev_changed, dev_state);
-    UPDATE<<<1, 1>>>(*dev_l, *dev_t_, dev_e, dev_changed, dev_state);
+    // UPDATE<<<1, 1>>>(*dev_k, -(*dev_t_), dev_e, dev_changed, dev_state);
+    UPDATE_SPECIAL<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
+                             dev_state);
 
-    ROTATE_MULTIPLE1<<<1, 1>>>(*dev_k, *dev_l, *dev_c, *dev_s, dev_S, n);
-    ROTATE_MULTIPLE2<<<1, 1>>>(*dev_k, *dev_l, *dev_c, *dev_s, dev_S, n);
-    ROTATE_MULTIPLE3<<<1, 1>>>(*dev_k, *dev_l, *dev_c, *dev_s, dev_S, n);
+    ROTATE_MULTIPLE1<<<1, 1>>>(dev_k, dev_l, dev_c, dev_s, dev_S, n);
+    ROTATE_MULTIPLE2<<<1, 1>>>(dev_k, dev_l, dev_c, dev_s, dev_S, n);
+    ROTATE_MULTIPLE3<<<1, 1>>>(dev_k, dev_l, dev_c, dev_s, dev_S, n);
 
-    UPDATE_E<<<1, 1>>>(n, dev_E, *dev_k, *dev_l, *dev_c, *dev_s);
-    UPDATE_IND<<<1, 1>>>(*dev_k, *dev_l, dev_ind, n, dev_S);
+    UPDATE_E<<<1, 1>>>(n, dev_E, dev_k, dev_l, dev_c, dev_s);
+    UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
+
+    cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
   }
+
+  printf("JACOBI Converged\n");
 
   cudaFree(&dev_E);
   cudaFree(&dev_state);
@@ -326,6 +348,8 @@ __global__ void GET_RETENTION(int *k, int n, double *e, double eigen_total,
 void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
                  double **V_T, double **D_HAT, int *K, int retention) {
 
+  printf("Starting SVD\n");
+
   double *dev_M, *dev_M_T, *dev_S, *dev_e, *dev_E, *dev_new_E, *dev_eigen_total,
       *dev_SIGMA, *dev_SIGMA_INV, *dev_V_T, *dev_U, *dev_W, *dev_D_HAT;
 
@@ -335,16 +359,26 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaMalloc(&dev_M_T, sizeof(double) * m * n);
   cudaMalloc(&dev_S, sizeof(double) * n * n);
 
+  printf("Memory Allocated\n");
+
   cudaMemcpy(dev_M, D, sizeof(double) * m * n, cudaMemcpyHostToDevice);
+
+  printf("Initial Copying Done\n");
 
   TRANSPOSE<<<1, 1>>>(dev_M, m, n, dev_M_T);
 
+  printf("dev_M_T calculated\n");
+
   MATMUL_IN_ORDER<<<1, 1>>>(dev_M_T, n, m, dev_M_T, n, dev_S);
+
+  printf("MATMUL done\n");
 
   cudaFree(dev_M_T);
 
   cudaMalloc(&dev_e, sizeof(double) * n);
   cudaMalloc(&dev_E, sizeof(double) * n * n);
+
+  printf("Starting JACOBI\n");
 
   JACOBI(n, dev_E, dev_e, dev_S);
 
@@ -352,6 +386,8 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_indices, sizeof(int) * n);
   cudaMalloc(&dev_new_E, sizeof(double) * n * n);
+
+  printf("Starting SORT\n");
 
   SORT<<<1, 1>>>(dev_e, dev_E, n, dev_indices, dev_new_E);
 
@@ -365,11 +401,17 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaMalloc(&dev_V_T, sizeof(double) * n * n);
   cudaMalloc(&dev_U, sizeof(double) * m * m);
 
+  printf("Calculating SINGULAR Values\n");
+
   GET_SINGULAR_VALS<<<1, 1>>>(n, dev_eigen_total, dev_e, dev_SIGMA,
                               dev_SIGMA_INV);
 
+  printf("Calculating V_T\n");
+
   /* Compute V_T */
   TRANSPOSE<<<1, 1>>>(dev_E, n, n, dev_V_T);
+
+  printf("Calculating U\n");
 
   GET_U<<<1, 1>>>(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
 
@@ -377,7 +419,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_k, sizeof(int));
 
-  // double *dev_retention;
+  printf("Calculating retention k\n");
 
   GET_RETENTION<<<1, 1>>>(dev_k, n, dev_e, *dev_eigen_total, retention);
 
@@ -389,10 +431,14 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_W, sizeof(double) * n * (*K));
 
+  printf("Calculating W\n");
+
   GET_W<<<1, 1>>>(*K, n, dev_W, dev_E);
 
   cudaFree(dev_E);
   cudaMalloc(&dev_D_HAT, sizeof(double) * m * (*K));
+
+  printf("Calculating D_HAT\n");
 
   /* Mat multiply to get d hat */
   MATMUL<<<1, 1>>>(dev_M, m, n, dev_W, *dev_k, dev_D_HAT);
@@ -411,5 +457,8 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaFree(dev_SIGMA);
   cudaFree(dev_V_T);
   cudaFree(dev_D_HAT);
+
+  printf("Cleaned up\n");
+
   // *K = k;
 }
