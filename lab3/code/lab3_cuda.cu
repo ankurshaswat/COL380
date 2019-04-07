@@ -425,6 +425,7 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   // printf("Starting WHILE loop\n");
 
   int count = 0;
+  int numblocks;
 
   while (state != 0 && count < 100) {
     count++;
@@ -435,10 +436,16 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
                       dev_S, dev_e);
     UPDATE_SPECIAL<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
                              dev_state);
-    ROTATE_MULTIPLE1<<<1, 1>>>(dev_k, dev_l, dev_c, dev_s, dev_S, n);
-    ROTATE_MULTIPLE2<<<1, 1>>>(dev_k, dev_l, dev_c, dev_s, dev_S, n);
-    ROTATE_MULTIPLE3<<<1, 1>>>(dev_k, dev_l, dev_c, dev_s, dev_S, n);
-    UPDATE_E<<<1, 1>>>(n, dev_E, dev_k, dev_l, dev_c, dev_s);
+
+    numblocks = (min(n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
+    ROTATE_MULTIPLE1<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
+                                               dev_S, n);
+    ROTATE_MULTIPLE2<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
+                                               dev_S, n);
+
+    ROTATE_MULTIPLE3<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
+                                               dev_S, n);
+    UPDATE_E<<<numblocks, BLOCKSIZE>>>(n, dev_E, dev_k, dev_l, dev_c, dev_s);
     UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
     cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
 
@@ -492,27 +499,47 @@ __global__ void GET_EIGEN_SUM(double *eigen_total, double *e, int n) {
   }
 }
 
-// TODO
-__global__ void GET_U(int m, int n, double *M, double *V_T, double *SIGMA_INV,
-                      double *U) {
-  int i, j, k;
-  double sum;
-  /* Compute M.V.SIGMAINV */
-  for (i = 0; i < m; i++) {
-    for (j = 0; j < m; j++) {
+void GET_U(int m, int n, double *dev_M, double *dev_V_T, double *dev_SIGMA_INV,
+           double *dev_U) {
+  double *dev_MV, *dev_V;
+  cudaMalloc(&dev_MV, sizeof(double) * m * n);
+  cudaMalloc(&dev_V, sizeof(double) * n * n);
 
-      sum = 0;
-      if (j < n) {
-        for (k = 0; k < n; k++) {
-          sum += M[INDEX(i, k, m, n)] * V_T[INDEX(j, k, n, n)];
-        }
-        sum *= SIGMA_INV[j];
-      }
+  int numblocks = (min(n * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
 
-      U[INDEX(i, j, m, m)] = sum;
-    }
-  }
+  TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_V_T, n, n, dev_V);
+  numblocks = (min(m * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
+  MATMUL_OPTIMIZED<<<numblocks, BLOCKSIZE>>>(m, n, n, dev_M, dev_V, dev_MV);
+
+  numblocks = (min(m * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
+  // SIGMA_MULTI<<<
+
+  cudaFree(dev_MV);
+  cudaFree(dev_V);
 }
+
+// // TODO
+// __global__ void GET_U(int m, int n, double *M, double *V_T, double
+// *SIGMA_INV,
+//                       double *U) {
+//   int i, j, k;
+//   double sum;
+//   /* Compute M.V.SIGMAINV */
+//   for (i = 0; i < m; i++) {
+//     for (j = 0; j < m; j++) {
+
+//       sum = 0;
+//       if (j < n) {
+//         for (k = 0; k < n; k++) {
+//           sum += M[INDEX(i, k, m, n)] * V_T[INDEX(j, k, n, n)];
+//         }
+//         sum *= SIGMA_INV[j];
+//       }
+
+//       U[INDEX(i, j, m, m)] = sum;
+//     }
+//   }
+// }
 
 __global__ void GET_W(int k_retended, int n, double *W, double *E) {
 
@@ -585,7 +612,8 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   // printf("dev_M_T calculated\n");
 
-  MATMUL_IN_ORDER<<<1, 1>>>(dev_M_T, n, m, dev_M_T, n, dev_S);
+  // MATMUL_IN_ORDER<<<1, 1>>>(dev_M_T, n, m, dev_M_T, n, dev_S);
+  MATMUL_OPTIMIZED<<<numblocks, BLOCKSIZE>>>(n, m, n, dev_M_T, dev_M, dev_S);
 
   // printMat<<<1, 1>>>(dev_S, n, n);
 
@@ -613,7 +641,8 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   // printf("Calculating U\n");
 
-  GET_U<<<1, 1>>>(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
+  // GET_U<<<1, 1>>>(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
+  GET_U(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
 
   // printf("Calculating retention k\n");
 

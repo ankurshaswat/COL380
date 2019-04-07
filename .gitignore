@@ -37,5 +37,6 @@ lab1/dataset
 lab2/code/pca
 lab2/testcase/*.txt
 lab3/code/pca
+lab3/testcases/*.txt
 
 env/
