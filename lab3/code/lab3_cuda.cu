@@ -413,10 +413,11 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   cudaMalloc(&dev_t_, sizeof(double));
 
   // printf("Starting INIT\n");
+  int numblocks = (min(n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
 
-  INIT1<<<1, 1>>>(n, dev_E);
+  INIT1<<<numblocks, BLOCKSIZE>>>(n, dev_E);
   INIT2<<<1, 1>>>(dev_state, n);
-  INIT3<<<1, 1>>>(dev_ind, dev_e, dev_S, n, dev_changed);
+  INIT3<<<numblocks, BLOCKSIZE>>>(dev_ind, dev_e, dev_S, n, dev_changed);
   // printVec<<<1, 1>>>(dev_e, n);
   // printVec<<<1, 1>>>(dev_ind, n);
   // printVec<<<1, 1>>>(dev_changed, n);
@@ -425,7 +426,6 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   // printf("Starting WHILE loop\n");
 
   int count = 0;
-  int numblocks;
 
   while (state != 0 && count < 100) {
     count++;
@@ -437,7 +437,6 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
     UPDATE_SPECIAL<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
                              dev_state);
 
-    numblocks = (min(n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
     ROTATE_MULTIPLE1<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
                                                dev_S, n);
     ROTATE_MULTIPLE2<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
@@ -637,7 +636,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   // printf("Calculating V_T\n");
 
-  TRANSPOSE<<<1, 1>>>(dev_E, n, n, dev_V_T);
+  TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_E, n, n, dev_V_T);
 
   // printf("Calculating U\n");
 
