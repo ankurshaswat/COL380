@@ -509,12 +509,12 @@ void GET_U(int m, int n, double *dev_M, double *dev_V_T, double *dev_SIGMA_INV,
   TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_V_T, n, n, dev_V);
   numblocks = (min(m * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
   MATMUL_OPTIMIZED<<<numblocks, BLOCKSIZE>>>(m, n, n, dev_M, dev_V, dev_MV);
-
-  numblocks = (min(m * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
-  // SIGMA_MULTI<<<
-
   cudaFree(dev_MV);
   cudaFree(dev_V);
+
+  // numblocks = (min(m * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
+  // SIGMA_MULTI<<<
+
 }
 
 // // TODO
@@ -589,65 +589,72 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   int *dev_k, *dev_indices;
 
-  cudaMalloc(&dev_M, sizeof(double) * m * n);
-  cudaMemcpy(dev_M, D, sizeof(double) * m * n, cudaMemcpyHostToDevice);
-  cudaMalloc(&dev_M_T, sizeof(double) * m * n);
-  cudaMalloc(&dev_S, sizeof(double) * n * n);
-  cudaMalloc(&dev_eigen_total, sizeof(int));
-  cudaMalloc(&dev_SIGMA, sizeof(double) * n);
-  cudaMalloc(&dev_SIGMA_INV, sizeof(double) * n);
-  cudaMalloc(&dev_V_T, sizeof(double) * n * n);
-  cudaMalloc(&dev_U, sizeof(double) * m * m);
-  cudaMalloc(&dev_e, sizeof(double) * n);
-  cudaMalloc(&dev_E, sizeof(double) * n * n);
-  cudaMalloc(&dev_indices, sizeof(int) * n);
-  cudaMalloc(&dev_new_E, sizeof(double) * n * n);
-  cudaMalloc(&dev_k, sizeof(int));
+
+
 
   // printf("Memory Allocated\n");
   int numblocks = (min(m * n, 65535) + BLOCKSIZE - 1) / BLOCKSIZE;
 
+  cudaMalloc(&dev_M, sizeof(double) * m * n);
+  cudaMemcpy(dev_M, D, sizeof(double) * m * n, cudaMemcpyHostToDevice);
+  cudaMalloc(&dev_M_T, sizeof(double) * m * n);
   TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_M, m, n, dev_M_T);
 
   // printf("dev_M_T calculated\n");
 
   // MATMUL_IN_ORDER<<<1, 1>>>(dev_M_T, n, m, dev_M_T, n, dev_S);
+  cudaMalloc(&dev_S, sizeof(double) * n * n);
   MATMUL_OPTIMIZED<<<numblocks, BLOCKSIZE>>>(n, m, n, dev_M_T, dev_M, dev_S);
+  cudaFree(dev_M_T);
 
   // printMat<<<1, 1>>>(dev_S, n, n);
 
   // printf("MATMUL done. Starting JACOBI\n");
-
+  cudaMalloc(&dev_e, sizeof(double) * n);
+  cudaMalloc(&dev_E, sizeof(double) * n * n);
   JACOBI(n, dev_E, dev_e, dev_S);
+  cudaFree(dev_S);
 
   // printf("Starting SORT\n");
-
+  cudaMalloc(&dev_indices, sizeof(int) * n);
+  cudaMalloc(&dev_new_E, sizeof(double) * n * n);
   SORT<<<1, 1>>>(dev_e, dev_E, n, dev_indices, dev_new_E);
+  cudaFree(dev_indices);
+
   // ODD_EVEN_SORT<<<1, 1>>>(dev_e, dev_E, n, dev_indices, dev_new_E);
   // printVec<<<1, 1>>>(dev_e, n);
   double *dev_old_E = dev_E;
+  cudaFree(dev_old_E);
   dev_E = dev_new_E;
   // printMat<<<1, 1>>>(dev_E, n, n);
 
   // printf("Calculating SINGULAR Values\n");
-
+  cudaMalloc(&dev_SIGMA, sizeof(double) * n);
+  cudaMalloc(&dev_SIGMA_INV, sizeof(double) * n);
   GET_SINGULAR_VALS<<<1, 1>>>(n, dev_e, dev_SIGMA, dev_SIGMA_INV);
+  cudaMalloc(&dev_eigen_total, sizeof(int));
   GET_EIGEN_SUM<<<1, 1>>>(dev_eigen_total, dev_e, n);
 
   // printf("Calculating V_T\n");
-
+  cudaMalloc(&dev_V_T, sizeof(double) * n * n);
   TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_E, n, n, dev_V_T);
 
   // printf("Calculating U\n");
 
   // GET_U<<<1, 1>>>(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
+  cudaMalloc(&dev_U, sizeof(double) * m * m);
   GET_U(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
+  cudaFree(dev_SIGMA_INV);
 
   // printf("Calculating retention k\n");
-
+  cudaMalloc(&dev_k, sizeof(int));
   GET_RETENTION<<<1, 1>>>(dev_k, n, dev_e, dev_eigen_total, retention);
+  cudaFree(dev_eigen_total);
+  cudaFree(dev_e);
 
   cudaMemcpy(K, dev_k, sizeof(int), cudaMemcpyDeviceToHost);
+  cudaFree(dev_k);
+
   cudaMalloc(&dev_W, sizeof(double) * n * (*K));
   cudaMalloc(&dev_D_HAT, sizeof(double) * m * (*K));
   *D_HAT = (double *)malloc(sizeof(double) * m * (*K));
@@ -655,26 +662,18 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   // printf("Calculating W\n");
 
   GET_W<<<1, 1>>>(*K, n, dev_W, dev_E);
+  cudaFree(dev_E);
 
   // printf("Calculating D_HAT\n");
 
   numblocks = (min(n, 65535) + BLOCKSIZE - 1) / BLOCKSIZE;
   // MATMUL<<<1, 1>>>(dev_M, m, n, dev_W, *K, dev_D_HAT);
   MATMUL_OPTIMIZED<<<numblocks, BLOCKSIZE>>>(m, n, *K, dev_M, dev_W, dev_D_HAT);
+  cudaFree(dev_W);
+  cudaFree(dev_M);
 
   // printf("Calculated D_HAT %d\n", sizeof(double) * m * m);
 
-  cudaFree(dev_indices);
-  cudaFree(dev_E);
-  cudaFree(dev_old_E);
-  cudaFree(dev_M);
-  cudaFree(dev_W);
-  cudaFree(dev_S);
-  cudaFree(dev_M_T);
-  cudaFree(dev_e);
-  cudaFree(dev_eigen_total);
-  cudaFree(dev_k);
-  cudaFree(dev_SIGMA_INV);
 
   // printMat<<<1, 1>>>(dev_V_T, n, n);
   // printMat<<<1, 1>>>(dev_U, m, m);
