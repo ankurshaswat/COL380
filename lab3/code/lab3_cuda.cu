@@ -83,12 +83,6 @@ __device__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
   }
 }
 
-__global__ void UPDATE_SPECIAL(int *k, int *l, double *t, double *e,
-                               bool *changed, int *state) {
-  UPDATE(*k, -1 * (*t), e, changed, state);
-  UPDATE(*l, *t, e, changed, state);
-}
-
 __device__ void ROTATE(int k, int l, int i, int j, double c, double s,
                        double *S, int N) {
   double Skl = S[INDEX(k, l, N, N)], Sij = S[INDEX(i, j, N, N)];
@@ -98,13 +92,15 @@ __device__ void ROTATE(int k, int l, int i, int j, double c, double s,
 
 __global__ void INIT1(int N, double *E) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  // int stride = blockDim.x * gridDim.x;
+  // int i;
 
-  for (i = index; i < N * N; i += stride) {
+  // for (i = index; i < N * N; i += stride) {
+  if (i < N * N) {
     E[i] = ((i / N) == (i % N));
   }
+  // }
 }
 
 __global__ void INIT2(int *state, int N) { *state = N; }
@@ -112,11 +108,19 @@ __global__ void INIT2(int *state, int N) { *state = N; }
 // TODO
 __global__ void INIT3(int *ind, double *e, double *S, int N, bool *changed) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int k;
+  // int index = blockIdx.x * blockDim.x + threadIdx.x;
+  // int stride = blockDim.x * gridDim.x;
+  // int k;
 
-  for (k = index; k < N; k += stride) {
+  // for (k = index; k < N; k += stride) {
+  //   MAXIND(k, N, S, &ind[k]);
+  //   e[k] = S[INDEX(k, k, N, N)];
+  //   changed[k] = true;
+  // }
+
+  int k = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (k < N) {
     MAXIND(k, N, S, &ind[k]);
     e[k] = S[INDEX(k, k, N, N)];
     changed[k] = true;
@@ -155,14 +159,26 @@ __global__ void GET_S_C(int *k, int *l, int *m, double *c, double *s, double *t,
   S[INDEX(*k, *l, N, N)] = 0.0;
 }
 
+__global__ void UPDATE_COMBINED(int *k, int *l, double *t, double *e,
+                                bool *changed, int *state) {
+  UPDATE(*k, -1 * (*t), e, changed, state);
+  UPDATE(*l, *t, e, changed, state);
+}
+
 __global__ void ROTATE_MULTIPLE1(int *k, int *l, double *c, double *s,
                                  double *S, int N) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+  // int index = blockIdx.x * blockDim.x + threadIdx.x;
+  // int stride = blockDim.x * gridDim.x;
+  // int i;
 
-  for (i = index; i < *k; i += stride) {
+  // for (i = index; i < *k; i += stride) {
+  //   ROTATE(i, *k, i, *l, *c, *s, S, N);
+  // }
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (i < *k) {
     ROTATE(i, *k, i, *l, *c, *s, S, N);
   }
 }
@@ -170,11 +186,17 @@ __global__ void ROTATE_MULTIPLE1(int *k, int *l, double *c, double *s,
 __global__ void ROTATE_MULTIPLE2(int *k, int *l, double *c, double *s,
                                  double *S, int N) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x + (*k) + 1;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+  // int index = blockIdx.x * blockDim.x + threadIdx.x + (*k) + 1;
+  // int stride = blockDim.x * gridDim.x;
+  // int i;
 
-  for (i = index; i < *l; i += stride) {
+  // for (i = index; i < *l; i += stride) {
+  //   ROTATE(*k, i, i, *l, *c, *s, S, N);
+  // }
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x + (*k) + 1;
+
+  if (i < *l) {
     ROTATE(*k, i, i, *l, *c, *s, S, N);
   }
 }
@@ -182,11 +204,17 @@ __global__ void ROTATE_MULTIPLE2(int *k, int *l, double *c, double *s,
 __global__ void ROTATE_MULTIPLE3(int *k, int *l, double *c, double *s,
                                  double *S, int N) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x + (*l) + 1;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+  // int index = blockIdx.x * blockDim.x + threadIdx.x + (*l) + 1;
+  // int stride = blockDim.x * gridDim.x;
+  // int i;
 
-  for (i = index; i < N; i += stride) {
+  // for (i = index; i < N; i += stride) {
+  //   ROTATE(*k, i, *l, i, *c, *s, S, N);
+  // }
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x + (*l) + 1;
+
+  if (i < N) {
     ROTATE(*k, i, *l, i, *c, *s, S, N);
   }
 }
@@ -194,12 +222,22 @@ __global__ void ROTATE_MULTIPLE3(int *k, int *l, double *c, double *s,
 __global__ void UPDATE_E(int N, double *E, int *k, int *l, double *c,
                          double *s) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+  // int index = blockIdx.x * blockDim.x + threadIdx.x;
+  // int stride = blockDim.x * gridDim.x;
+  // int i;
+  // double Eik, Eil;
+
+  // for (i = index; i < N; i += stride) {
+  //   Eik = E[INDEX(i, *k, N, N)];
+  //   Eil = E[INDEX(i, *l, N, N)];
+  //   E[INDEX(i, *k, N, N)] = (*c) * Eik - (*s) * Eil;
+  //   E[INDEX(i, *l, N, N)] = (*s) * Eik + (*c) * Eil;
+  // }
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
   double Eik, Eil;
 
-  for (i = index; i < N; i += stride) {
+  if (i < N) {
     Eik = E[INDEX(i, *k, N, N)];
     Eil = E[INDEX(i, *l, N, N)];
     E[INDEX(i, *k, N, N)] = (*c) * Eik - (*s) * Eil;
@@ -214,26 +252,33 @@ __global__ void UPDATE_IND(int *k, int *l, int *ind, int N, double *S) {
 
 __global__ void TRANSPOSE(double *M, int m, int n, double *M_T) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+  // int index = blockIdx.x * blockDim.x + threadIdx.x;
+  // int stride = blockDim.x * gridDim.x;
+  // int i;
 
-  for (i = index; i < n * m; i += stride) {
+  // for (i = index; i < n * m; i += stride) {
+  //   M_T[i] = M[INDEX(i % m, i / m, m, n)];
+  // }
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (i < n * m) {
     M_T[i] = M[INDEX(i % m, i / m, m, n)];
   }
 }
 
-// TODO
-__global__ void MATMUL(double *A, int p, int q, double *B, int r, double *C) {
-  int i, j, k;
+__global__ void MATMUL2(int p, int q, int r, double *A, double *B, double *C) {
 
-  for (i = 0; i < p; i++) {
-    for (j = 0; j < r; j++) {
-      C[INDEX(i, j, p, r)] = 0;
-      for (k = 0; k < q; k++) {
-        C[INDEX(i, j, p, r)] += A[INDEX(i, k, p, q)] * B[INDEX(k, j, q, r)];
-      }
+  int row = blockIdx.y * blockDim.y + threadIdx.y;
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  int i;
+  double sum = 0;
+
+  if (row < p && col < r) {
+    for (i = 0; i < q; i++) {
+      sum += A[INDEX(row, i, p, q)] * B[INDEX(i, col, q, r)];
     }
+    C[INDEX(row, col, p, r)] = sum;
   }
 }
 
@@ -305,65 +350,6 @@ __global__ void ARRANGE(int *indices, double *old_E, double *new_E, int n1,
   }
 }
 
-void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
-
-  int *dev_state, *dev_ind, *dev_m, *dev_k, *dev_l;
-  double *dev_c, *dev_s, *dev_t_;
-  bool *dev_changed;
-  int state = n;
-
-  cudaMalloc(&dev_state, sizeof(int));
-  cudaMalloc(&dev_ind, sizeof(int) * n);
-  cudaMalloc(&dev_changed, sizeof(bool) * n);
-  cudaMalloc(&dev_m, sizeof(int));
-  cudaMalloc(&dev_k, sizeof(int));
-  cudaMalloc(&dev_l, sizeof(int));
-  cudaMalloc(&dev_c, sizeof(double));
-  cudaMalloc(&dev_s, sizeof(double));
-  cudaMalloc(&dev_t_, sizeof(double));
-
-  int numblocks = (min(n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
-
-  INIT1<<<numblocks, BLOCKSIZE>>>(n, dev_E);
-  INIT2<<<1, 1>>>(dev_state, n);
-  INIT3<<<numblocks, BLOCKSIZE>>>(dev_ind, dev_e, dev_S, n, dev_changed);
-
-  int count = 0;
-
-  while (state != 0 && count < 100) {
-    count++;
-
-    BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
-    GET_S_C<<<1, 1>>>(dev_k, dev_l, dev_m, dev_c, dev_s, dev_t_, n, dev_ind,
-                      dev_S, dev_e);
-    UPDATE_SPECIAL<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
-                             dev_state);
-
-    ROTATE_MULTIPLE1<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
-                                               dev_S, n);
-    ROTATE_MULTIPLE2<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
-                                               dev_S, n);
-
-    ROTATE_MULTIPLE3<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
-                                               dev_S, n);
-    UPDATE_E<<<numblocks, BLOCKSIZE>>>(n, dev_E, dev_k, dev_l, dev_c, dev_s);
-    UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
-    cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
-
-    cudaDeviceSynchronize();
-  }
-
-  cudaFree(dev_state);
-  cudaFree(dev_ind);
-  cudaFree(dev_changed);
-  cudaFree(dev_m);
-  cudaFree(dev_k);
-  cudaFree(dev_l);
-  cudaFree(dev_c);
-  cudaFree(dev_s);
-  cudaFree(dev_t_);
-}
-
 __global__ void GET_SINGULAR_VALS(int n, double *e, double *SIGMA,
                                   double *SIGMA_INV) {
   int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -387,46 +373,84 @@ __global__ void GET_EIGEN_SUM(double *eigen_total, double *e, int n) {
   }
 }
 
-__global__ void MULTIPLY_SIGMA_INV(double *MV, double *SIGMA_INV, double *U,
-                                   int m, int n) {
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+__global__ void MULTIPLY_SIGMA_INV(int m, int n, double *M, double *V,
+                                   double *SIGMA_INV, double *U) {
+  // int index = blockIdx.x * blockDim.x + threadIdx.x;
+  // int stride = blockDim.x * gridDim.x;
+  // int l;
+  // int j;
 
-  for (i = index; i < m * m; i += stride) {
-    if (i / m < n) {
-      U[i] = MV[i % m] * SIGMA_INV[i % m];
+  // for (l = index; l < m * m; l += stride) {
+  //   j = l % m;
+  //   if (j < n) {
+  //     U[l] = MV[INDEX(l / m, j, m, n)] * SIGMA_INV[j];
+  //   } else {
+  //     U[l] = 0;
+  //   }
+  // }
+
+  // int row = blockIdx.y * blockDim.y + threadIdx.y;
+  // int col = blockIdx.x * blockDim.x + threadIdx.x;
+  // int i;
+  // double sum = 0;
+
+  // if (row < p && col < r) {
+  //   for (i = 0; i < q; i++) {
+  //     sum += A[INDEX(row, i, p, q)] * B[INDEX(i, col, q, r)];
+  //   }
+  //   C[INDEX(row, col, p, r)] = sum;
+  // }
+
+  // if(row < m )
+
+  // int l = blockIdx.x * blockDim.x + threadIdx.x;
+  // int j;
+
+  // if (l < m * m) {
+  //   j = l % m;
+  //   if (j < n) {
+  //     U[l] = MV[INDEX(l / m, j, m, n)] * SIGMA_INV[j];
+  //   } else {
+  //     U[l] = 0;
+  //   }
+  // }
+
+  int row = blockIdx.y * blockDim.y + threadIdx.y;
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  int i;
+  double sum = 0;
+
+  if (row < m && col < m) {
+    if (col < n) {
+      for (i = 0; i < n; i++) {
+        sum += M[INDEX(row, i, m, n)] * V[INDEX(i, col, n, n)];
+      }
+      U[INDEX(row, col, m, m)] = sum * SIGMA_INV[col];
+    } else {
+      U[INDEX(row, col, m, m)] = 0;
     }
   }
 }
 
-void GET_U(int m, int n, double *dev_M, double *dev_V_T, double *dev_SIGMA_INV,
+void GET_U(int m, int n, double *dev_M, double *dev_V, double *dev_SIGMA_INV,
            double *dev_U) {
-  double *dev_MV, *dev_V;
-  cudaMalloc(&dev_MV, sizeof(double) * m * n);
-  cudaMalloc(&dev_V, sizeof(double) * n * n);
+  // double *dev_MV;
+  // cudaMalloc(&dev_MV, sizeof(double) * m * n);
 
-  int numblocks = (min(n * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
+  dim3 dimBlock(BLOCKSIZE, BLOCKSIZE);
+  dim3 dimGrid((m + BLOCKSIZE - 1) / BLOCKSIZE,
+               (m + BLOCKSIZE - 1) / BLOCKSIZE);
+  MULTIPLY_SIGMA_INV<<<dimGrid, dimBlock>>>(m, n, dev_M, dev_V, dev_SIGMA_INV,
+                                            dev_U);
 
-  TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_V_T, n, n, dev_V);
-  numblocks = (min(m * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
-  // MATMUL_OPTIMIZED<<<numblocks, BLOCKSIZE>>>(m, n, n, dev_M, dev_V, dev_MV);
-  cudaFree(dev_MV);
-  cudaFree(dev_V);
+  // MATMUL2<<<dimBlock, dimGrid>>>(m, n, n, dev_M, dev_V, dev_MV);
 
-  // numblocks = (min(m * n, 65536) + BLOCKSIZE - 1) / BLOCKSIZE;
-  // SIGMA_MULTI<<<
-}
+  // int numblocks = (m * m + BLOCKSIZE - 1) / BLOCKSIZE;
+  // MULTIPLY_SIGMA_INV<<<numblocks, BLOCKSIZE>>>(dev_MV, dev_SIGMA_INV, dev_U,
+  // m,
+  //  n);
 
-__global__ void GET_W(int k_retended, int n, double *W, double *E) {
-
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int i;
-
-  for (i = index; i < n * k_retended; i += stride) {
-    W[i] = E[INDEX(i / k_retended, i % k_retended, n, n)];
-  }
+  // cudaFree(dev_MV);
 }
 
 __global__ void GET_RETENTION(int *k, int n, double *e, double *eigen_total,
@@ -446,14 +470,92 @@ __global__ void GET_RETENTION(int *k, int n, double *e, double *eigen_total,
   *k = k_retended;
 }
 
+__global__ void GET_W(int k_retended, int n, double *W, double *E) {
+
+  // int index = blockIdx.x * blockDim.x + threadIdx.x;
+  // int stride = blockDim.x * gridDim.x;
+  // int i;
+
+  // for (i = index; i < n * k_retended; i += stride) {
+  //   W[i] = E[INDEX(i / k_retended, i % k_retended, n, n)];
+  // }
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (i < n * k_retended) {
+    W[i] = E[INDEX(i / k_retended, i % k_retended, n, n)];
+  }
+}
+
+void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
+
+  int *dev_state, *dev_ind, *dev_m, *dev_k, *dev_l;
+  double *dev_c, *dev_s, *dev_t_;
+  bool *dev_changed;
+  int state = n;
+
+  cudaMalloc(&dev_state, sizeof(int));
+  cudaMalloc(&dev_ind, sizeof(int) * n);
+  cudaMalloc(&dev_changed, sizeof(bool) * n);
+  cudaMalloc(&dev_m, sizeof(int));
+  cudaMalloc(&dev_k, sizeof(int));
+  cudaMalloc(&dev_l, sizeof(int));
+  cudaMalloc(&dev_c, sizeof(double));
+  cudaMalloc(&dev_s, sizeof(double));
+  cudaMalloc(&dev_t_, sizeof(double));
+
+  int numblocks = (n * n + BLOCKSIZE - 1) / BLOCKSIZE;
+  INIT1<<<numblocks, BLOCKSIZE>>>(n, dev_E);
+  INIT2<<<1, 1>>>(dev_state, n);
+
+  numblocks = (n + BLOCKSIZE - 1) / BLOCKSIZE;
+  INIT3<<<numblocks, BLOCKSIZE>>>(dev_ind, dev_e, dev_S, n, dev_changed);
+
+  int count = 0;
+
+  while (state != 0 && count < 5 * n) {
+    count++;
+
+    // printf("%d %d\n", state, count);
+
+    BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
+    GET_S_C<<<1, 1>>>(dev_k, dev_l, dev_m, dev_c, dev_s, dev_t_, n, dev_ind,
+                      dev_S, dev_e);
+    UPDATE_COMBINED<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
+                              dev_state);
+
+    ROTATE_MULTIPLE1<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
+                                               dev_S, n);
+    ROTATE_MULTIPLE2<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
+                                               dev_S, n);
+    ROTATE_MULTIPLE3<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
+                                               dev_S, n);
+    UPDATE_E<<<numblocks, BLOCKSIZE>>>(n, dev_E, dev_k, dev_l, dev_c, dev_s);
+    UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
+
+    cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
+  }
+
+  cudaFree(dev_state);
+  cudaFree(dev_ind);
+  cudaFree(dev_changed);
+  cudaFree(dev_m);
+  cudaFree(dev_k);
+  cudaFree(dev_l);
+  cudaFree(dev_c);
+  cudaFree(dev_s);
+  cudaFree(dev_t_);
+}
+
 void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
-                 double **V_T, double **D_HAT, int *K, int retention) {
+                 double **V_T, int *SIGMAm, int *SIGMAn, double **D_HAT, int *K,
+                 int retention) {
 
   double *dev_M, *dev_M_T, *dev_S, *dev_e, *dev_E, *dev_new_E, *dev_eigen_total,
       *dev_SIGMA, *dev_SIGMA_INV, *dev_V_T, *dev_U, *dev_W, *dev_D_HAT;
 
-  int *dev_k, *dev_indices,
-      numblocks = (min(m * n, MAXBLOCKS) + BLOCKSIZE - 1) / BLOCKSIZE;
+  int *dev_k, *dev_indices, numblocks = (m * n + BLOCKSIZE - 1) / BLOCKSIZE;
 
   cudaMalloc(&dev_M, sizeof(double) * m * n);
   cudaMemcpy(dev_M, D, sizeof(double) * m * n, cudaMemcpyHostToDevice);
@@ -462,13 +564,19 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_M, m, n, dev_M_T);
 
   cudaMalloc(&dev_S, sizeof(double) * n * n);
-  // MATMUL_IN_ORDER<<<1, 1>>>(dev_M_T, n, m, dev_M_T, n, dev_S);
+
+  dim3 dimBlock(BLOCKSIZE, BLOCKSIZE);
+  dim3 dimGrid((n + BLOCKSIZE - 1) / BLOCKSIZE,
+               (n + BLOCKSIZE - 1) / BLOCKSIZE);
+
+  MATMUL2<<<dimGrid, dimBlock>>>(n, m, n, dev_M_T, dev_M, dev_S);
 
   cudaFree(dev_M_T);
 
   cudaMalloc(&dev_e, sizeof(double) * n);
   cudaMalloc(&dev_E, sizeof(double) * n * n);
   JACOBI(n, dev_E, dev_e, dev_S);
+
   cudaFree(dev_S);
 
   cudaMalloc(&dev_indices, sizeof(int) * n);
@@ -476,11 +584,11 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   bool *converged;
   cudaMalloc(&converged, sizeof(bool));
-  numblocks = (min(n, MAXBLOCKS) + BLOCKSIZE - 1) / BLOCKSIZE;
+  numblocks = ((n / 2) + BLOCKSIZE - 1) / BLOCKSIZE;
   ODD_EVEN_SORT<<<numblocks, BLOCKSIZE>>>(dev_e, dev_indices, n, converged);
   cudaFree(converged);
 
-  numblocks = (min(n * n, MAXBLOCKS) + BLOCKSIZE - 1) / BLOCKSIZE;
+  numblocks = (n * n + BLOCKSIZE - 1) / BLOCKSIZE;
   ARRANGE<<<numblocks, BLOCKSIZE>>>(dev_indices, dev_E, dev_new_E, n, n);
   cudaFree(dev_indices);
 
@@ -489,7 +597,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_SIGMA, sizeof(double) * n);
   cudaMalloc(&dev_SIGMA_INV, sizeof(double) * n);
-  numblocks = (min(n, MAXBLOCKS) + BLOCKSIZE - 1) / BLOCKSIZE;
+  numblocks = (n + BLOCKSIZE - 1) / BLOCKSIZE;
   GET_SINGULAR_VALS<<<numblocks, BLOCKSIZE>>>(n, dev_e, dev_SIGMA,
                                               dev_SIGMA_INV);
 
@@ -497,11 +605,11 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   GET_EIGEN_SUM<<<1, 1>>>(dev_eigen_total, dev_e, n);
 
   cudaMalloc(&dev_V_T, sizeof(double) * n * n);
-  numblocks = (min(n * n, MAXBLOCKS) + BLOCKSIZE - 1) / BLOCKSIZE;
+  numblocks = (n * n + BLOCKSIZE - 1) / BLOCKSIZE;
   TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_E, n, n, dev_V_T);
 
   cudaMalloc(&dev_U, sizeof(double) * m * m);
-  GET_U(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
+  GET_U(m, n, dev_M, dev_E, dev_SIGMA_INV, dev_U);
   cudaFree(dev_SIGMA_INV);
 
   cudaMalloc(&dev_k, sizeof(int));
@@ -514,29 +622,41 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_W, sizeof(double) * n * (*K));
   cudaMalloc(&dev_D_HAT, sizeof(double) * m * (*K));
-  *D_HAT = (double *)malloc(sizeof(double) * m * (*K));
 
-  GET_W<<<1, 1>>>(*K, n, dev_W, dev_E);
+  numblocks = (n * (*K) + BLOCKSIZE - 1) / BLOCKSIZE;
+  GET_W<<<numblocks, BLOCKSIZE>>>(*K, n, dev_W, dev_E);
+
   cudaFree(dev_E);
 
-  numblocks = (min(n, 65535) + BLOCKSIZE - 1) / BLOCKSIZE;
-  MATMUL<<<1, 1>>>(dev_M, m, n, dev_W, *K, dev_D_HAT);
+  dimGrid =
+      dim3((*K + BLOCKSIZE - 1) / BLOCKSIZE, (m + BLOCKSIZE - 1) / BLOCKSIZE);
+  MATMUL2<<<dimGrid, dimBlock>>>(m, n, *K, dev_M, dev_W, dev_D_HAT);
 
   cudaFree(dev_W);
   cudaFree(dev_M);
 
-  cudaMemcpy(*V_T, dev_U, sizeof(double) * m * m, cudaMemcpyDeviceToHost);
+  *U = (double *)malloc(sizeof(double) * m * m);
+  cudaMemcpy(*U, dev_U, sizeof(double) * m * m, cudaMemcpyDeviceToHost);
   cudaFree(dev_U);
 
+  *SIGMA = (double *)malloc(sizeof(double) * n);
   cudaMemcpy(*SIGMA, dev_SIGMA, sizeof(double) * n, cudaMemcpyDeviceToHost);
   cudaFree(dev_SIGMA);
 
-  cudaMemcpy(*U, dev_V_T, sizeof(double) * n * n, cudaMemcpyDeviceToHost);
+  *V_T = (double *)malloc(sizeof(double) * n * n);
+  cudaMemcpy(*V_T, dev_V_T, sizeof(double) * n * n, cudaMemcpyDeviceToHost);
   cudaFree(dev_V_T);
 
+  *D_HAT = (double *)malloc(sizeof(double) * m * (*K));
   cudaMemcpy(*D_HAT, dev_D_HAT, sizeof(double) * m * (*K),
              cudaMemcpyDeviceToHost);
+
+  // printMat<<<1, 1>>>(dev_U, m, m);
+
   cudaFree(dev_D_HAT);
 
   cudaDeviceSynchronize();
+
+  *SIGMAm = m;
+  *SIGMAn = n;
 }

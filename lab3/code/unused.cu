@@ -14,6 +14,20 @@ __global__ void MATMUL_IN_ORDER(double *A, int p, int q, double *B_T, int r,
   }
 }
 
+// TODO
+__global__ void MATMUL(int p, int q, int r, double *A, double *B, double *C) {
+  int i, j, k;
+
+  for (i = 0; i < p; i++) {
+    for (j = 0; j < r; j++) {
+      C[INDEX(i, j, p, r)] = 0;
+      for (k = 0; k < q; k++) {
+        C[INDEX(i, j, p, r)] += A[INDEX(i, k, p, q)] * B[INDEX(k, j, q, r)];
+      }
+    }
+  }
+}
+
 __device__ double *GET_SUB_MATRIX_START_POS(double *mat, int w, int row,
                                             int col) {
   return &mat[w * BLOCKSIZE * row + BLOCKSIZE * col];
@@ -94,7 +108,6 @@ __global__ void SORT(double *e, double *E, int n, int *indices, double *new_E) {
   }
 }
 
-
 // // TODO
 // __global__ void GET_U(int m, int n, double *M, double *V_T, double
 // *SIGMA_INV,
@@ -118,15 +131,14 @@ __global__ void SORT(double *e, double *E, int n, int *indices, double *new_E) {
 //   }
 // }
 
+// dim3 threadsPerBlock(BLOCKSIZE, BLOCKSIZE);
+// dim3 blocksPerGrid(n / threadsPerBlock.x, n / threadsPerBlock.y);
+// MATMUL_OPTIMIZED<<<blocksPerGrid, threadsPerBlock>>>(n, m, n, dev_M_T,
+// dev_M,
+// dev_S);
+//
 
-  // dim3 threadsPerBlock(BLOCKSIZE, BLOCKSIZE);
-  // dim3 blocksPerGrid(n / threadsPerBlock.x, n / threadsPerBlock.y);
-  // MATMUL_OPTIMIZED<<<blocksPerGrid, threadsPerBlock>>>(n, m, n, dev_M_T,
-  // dev_M,
-  // dev_S);
-  //      
-
-  // GET_U<<<1, 1>>>(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
-  // MATMUL_OPTIMIZED<<<numblocks,
-  // BLOCKSIZE>>>(m, n, *K, dev_M,
-  // dev_W, dev_D_HAT);
+// GET_U<<<1, 1>>>(m, n, dev_M, dev_V_T, dev_SIGMA_INV, dev_U);
+// MATMUL_OPTIMIZED<<<numblocks,
+// BLOCKSIZE>>>(m, n, *K, dev_M,
+// dev_W, dev_D_HAT);
