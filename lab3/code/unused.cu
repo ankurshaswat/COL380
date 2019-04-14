@@ -142,3 +142,58 @@ __global__ void SORT(double *e, double *E, int n, int *indices, double *new_E) {
 // MATMUL_OPTIMIZED<<<numblocks,
 // BLOCKSIZE>>>(m, n, *K, dev_M,
 // dev_W, dev_D_HAT);
+
+__global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
+                              bool *converged) {
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  // printf("%d\n", i);
+  *converged = false;
+  bool odd_iter = false;
+  double temp;
+  int to_see, to_see_next, temp_int;
+
+  if (2 * i < n) {
+    indices[2 * i] = 2 * i;
+  }
+  if (2 * i + 1 < n) {
+    indices[2 * i + 1] = 2 * i + 1;
+  }
+
+  while (!(*converged)) {
+    __syncthreads();
+    odd_iter = !odd_iter;
+    *converged = true;
+    if (odd_iter && 2 * i + 2 < n) {
+      to_see = 2 * i + 1;
+      to_see_next = 2 * i + 2;
+      if (arr[to_see] < arr[to_see_next]) {
+
+        temp = arr[to_see_next];
+        arr[to_see_next] = arr[to_see];
+        arr[to_see] = temp;
+
+        temp_int = indices[to_see_next];
+        indices[to_see_next] = indices[to_see];
+        indices[to_see] = temp_int;
+
+        *converged = false;
+      }
+    } else if (!odd_iter && 2 * i + 1 < n) {
+      to_see = 2 * i;
+      to_see_next = 2 * i + 1;
+      if (arr[to_see] < arr[to_see_next]) {
+
+        temp = arr[to_see_next];
+        arr[to_see_next] = arr[to_see];
+        arr[to_see] = temp;
+
+        temp_int = indices[to_see_next];
+        indices[to_see_next] = indices[to_see];
+        indices[to_see] = temp_int;
+
+        *converged = false;
+      }
+    }
+  }
+}

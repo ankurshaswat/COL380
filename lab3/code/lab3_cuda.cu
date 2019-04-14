@@ -1,7 +1,7 @@
 #include "lab3_cuda.h"
 
-#define BLOCKSIZE 32
-#define MAXBLOCKS 65535
+#define SQUARE_BLOCKSIZE 32
+#define LINEAR_BLOCKSIZE 1024
 #define JACOBI_TOLERANCE 0.001
 
 __device__ inline int INDEX(int i1, int i2, int l1, int l2) {
@@ -74,10 +74,10 @@ __device__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
     e[k] = 0;
   }
 
-  if (changed[k] && (ek_prev - e[k]) < JACOBI_TOLERANCE) {
+  if (changed[k] && fabsf(ek_prev - e[k]) < JACOBI_TOLERANCE) {
     changed[k] = false;
     (*state)--;
-  } else if ((!changed[k]) && (ek_prev - e[k]) > JACOBI_TOLERANCE) {
+  } else if ((!changed[k]) && fabsf(ek_prev - e[k]) > JACOBI_TOLERANCE) {
     changed[k] = true;
     (*state)++;
   }
@@ -116,19 +116,73 @@ __global__ void BEST_M(int *m, int N, double *S, int *ind) {
   *m = 0;
   int k;
   for (k = 1; k < N - 1; k++) {
-    if (fabs(S[INDEX(k, ind[k], N, N)]) > fabs(S[INDEX(*m, ind[*m], N, N)])) {
+    if (fabsf(S[INDEX(k, ind[k], N, N)]) > fabsf(S[INDEX(*m, ind[*m], N, N)])) {
       *m = k;
     }
   }
 }
+__global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
+                              bool *converged) {
+  int index_global = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
 
+  *converged = false;
+  bool odd_iter = false;
+  double temp;
+  int to_see, to_see_next, index_local, i, temp_int;
+
+  for (i = index_global; i < n; i += stride) {
+    indices[i] = i;
+  }
+
+  while (!(*converged)) {
+    __syncthreads();
+    *converged = true;
+    for (index_local = index_global; index_local < n / 2;
+         index_local += stride) {
+      if (odd_iter && 2 * index_local + 2 < n) {
+        to_see = 2 * index_local + 1;
+        to_see_next = 2 * index_local + 2;
+        if (arr[to_see] < arr[to_see_next]) {
+
+          temp = arr[to_see_next];
+          arr[to_see_next] = arr[to_see];
+          arr[to_see] = temp;
+
+          temp_int = indices[to_see_next];
+          indices[to_see_next] = indices[to_see];
+          indices[to_see] = temp_int;
+
+          *converged = false;
+        }
+      } else if (!odd_iter && 2 * index_local + 1 < n) {
+        to_see = 2 * index_local;
+        to_see_next = 2 * index_local + 1;
+        if (arr[to_see] < arr[to_see_next]) {
+
+          temp = arr[to_see_next];
+          arr[to_see_next] = arr[to_see];
+          arr[to_see] = temp;
+
+          temp_int = indices[to_see_next];
+          indices[to_see_next] = indices[to_see];
+          indices[to_see] = temp_int;
+
+          *converged = false;
+        }
+      }
+    }
+
+    odd_iter = !odd_iter;
+  }
+}
 __global__ void GET_S_C(int *k, int *l, int *m, double *c, double *s, double *t,
                         int N, int *ind, double *S, double *e) {
   *k = *m;
   *l = ind[*m];
   double p = S[INDEX(*k, *l, N, N)];
   double y = (e[*l] - e[*k]) / 2;
-  double d = fabs(y) + sqrt(p * p + y * y);
+  double d = fabsf(y) + sqrt(p * p + y * y);
   double r = sqrt(p * p + d * d);
 
   *c = d / r;
@@ -217,82 +271,22 @@ __global__ void MATMUL2(int p, int q, int r, double *A, double *B, double *C) {
   }
 }
 
-__global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
-                              bool *converged) {
-
-  int index_global = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-
-  *converged = false;
-  bool odd_iter = false;
-  double temp;
-  int to_see, to_see_next, index_local, i, temp_int;
-
-  for (i = index_global; i < n; i += stride) {
-    indices[i] = i;
-  }
-
-  while (!(*converged)) {
-    *converged = true;
-    for (index_local = index_global; index_local < n / 2;
-         index_local += stride) {
-      if (odd_iter && 2 * index_local + 2 < n) {
-        to_see = 2 * index_local + 1;
-        to_see_next = 2 * index_local + 2;
-        if (arr[to_see] < arr[to_see_next]) {
-
-          temp = arr[to_see_next];
-          arr[to_see_next] = arr[to_see];
-          arr[to_see] = temp;
-
-          temp_int = indices[to_see_next];
-          indices[to_see_next] = indices[to_see];
-          indices[to_see] = temp_int;
-
-          *converged = false;
-        }
-      } else if (!odd_iter && 2 * index_local + 1 < n) {
-        to_see = 2 * index_local;
-        to_see_next = 2 * index_local + 1;
-        if (arr[to_see] < arr[to_see_next]) {
-
-          temp = arr[to_see_next];
-          arr[to_see_next] = arr[to_see];
-          arr[to_see] = temp;
-
-          temp_int = indices[to_see_next];
-          indices[to_see_next] = indices[to_see];
-          indices[to_see] = temp_int;
-
-          *converged = false;
-        }
-      }
-    }
-
-    odd_iter = !odd_iter;
-    __syncthreads();
-  }
-}
-
 __global__ void ARRANGE(int *indices, double *old_E, double *new_E, int n1,
                         int n2) {
 
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-  for (int i = index; i < n1 * n2; i += stride) {
+  if (i < n1 * n2) {
     new_E[i] = old_E[INDEX(i / n2, indices[i % n2], n1, n2)];
   }
 }
 
 __global__ void GET_SINGULAR_VALS(int n, double *e, double *SIGMA,
                                   double *SIGMA_INV) {
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  int i;
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
   double sqrt_;
 
-  for (i = index; i < n; i += stride) {
+  if (i < n) {
     sqrt_ = sqrt(e[i]);
     SIGMA[i] = sqrt_;
     SIGMA_INV[i] = 1 / sqrt_;
@@ -329,9 +323,9 @@ __global__ void MULTIPLY_SIGMA_INV(int m, int n, double *M, double *V,
 
 void GET_U(int m, int n, double *dev_M, double *dev_V, double *dev_SIGMA_INV,
            double *dev_U) {
-  dim3 dimBlock(BLOCKSIZE, BLOCKSIZE);
-  dim3 dimGrid((m + BLOCKSIZE - 1) / BLOCKSIZE,
-               (m + BLOCKSIZE - 1) / BLOCKSIZE);
+  dim3 dimBlock(SQUARE_BLOCKSIZE, SQUARE_BLOCKSIZE);
+  dim3 dimGrid((m + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE,
+               (m + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE);
   MULTIPLY_SIGMA_INV<<<dimGrid, dimBlock>>>(m, n, dev_M, dev_V, dev_SIGMA_INV,
                                             dev_U);
 }
@@ -378,16 +372,16 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   cudaMalloc(&dev_s, sizeof(double));
   cudaMalloc(&dev_t_, sizeof(double));
 
-  int numblocks = (n * n + BLOCKSIZE - 1) / BLOCKSIZE;
-  INIT1<<<numblocks, BLOCKSIZE>>>(n, dev_E);
+  int numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  INIT1<<<numblocks, LINEAR_BLOCKSIZE>>>(n, dev_E);
   INIT2<<<1, 1>>>(dev_state, n);
 
-  numblocks = (n + BLOCKSIZE - 1) / BLOCKSIZE;
-  INIT3<<<numblocks, BLOCKSIZE>>>(dev_ind, dev_e, dev_S, n, dev_changed);
+  numblocks = (n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  INIT3<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_ind, dev_e, dev_S, n, dev_changed);
 
   int count = 0;
 
-  while (state != 0 && count < 5 * n) {
+  while (state != 0 && count < 10 * n) {
     count++;
 
     // printf("%d %d\n", state, count);
@@ -398,18 +392,20 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
     UPDATE_COMBINED<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
                               dev_state);
 
-    ROTATE_MULTIPLE1<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
-                                               dev_S, n);
-    ROTATE_MULTIPLE2<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
-                                               dev_S, n);
-    ROTATE_MULTIPLE3<<<numblocks, BLOCKSIZE>>>(dev_k, dev_l, dev_c, dev_s,
-                                               dev_S, n);
-    UPDATE_E<<<numblocks, BLOCKSIZE>>>(n, dev_E, dev_k, dev_l, dev_c, dev_s);
+    ROTATE_MULTIPLE1<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_k, dev_l, dev_c,
+                                                      dev_s, dev_S, n);
+    ROTATE_MULTIPLE2<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_k, dev_l, dev_c,
+                                                      dev_s, dev_S, n);
+    ROTATE_MULTIPLE3<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_k, dev_l, dev_c,
+                                                      dev_s, dev_S, n);
+    UPDATE_E<<<numblocks, LINEAR_BLOCKSIZE>>>(n, dev_E, dev_k, dev_l, dev_c,
+                                              dev_s);
     UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
 
     cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
   }
+  // printf("%d %d\n", state, count);
 
   cudaFree(dev_state);
   cudaFree(dev_ind);
@@ -422,6 +418,44 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   cudaFree(dev_t_);
 }
 
+__global__ void testDev(double *U, double *V_T, double *SIGMA, double *M, int m,
+                        int n, double *UV, double *new_M) {
+  for (int i = 0; i < m; i++) {
+    for (int j = 0; j < n; j++) {
+      UV[INDEX(i, j, m, n)] = U[INDEX(i, j, m, m)] * SIGMA[j];
+    }
+  }
+
+  double max_error = 0;
+
+  for (int i = 0; i < m; i++) {
+    for (int j = 0; j < n; j++) {
+      double sum = 0;
+      for (int k = 0; k < n; k++) {
+        sum += UV[INDEX(i, k, m, n)] * V_T[INDEX(k, j, n, n)];
+      }
+      new_M[INDEX(i, j, m, n)] = sum;
+      // printf("%f\n",M[INDEX(i, j, m, n)] - sum);
+      if (fabsf(M[INDEX(i, j, m, n)] - sum) > max_error) {
+        max_error = fabsf(M[INDEX(i, j, m, n)] - sum);
+      }
+    }
+  }
+
+  printf("Max error = %f", max_error);
+}
+
+void test(double *U, double *SIGMA, double *V_T, double *M, int m, int n) {
+  double *temp, *new_M;
+  cudaMalloc(&temp, sizeof(double) * m * n);
+  cudaMalloc(&new_M, sizeof(double) * m * n);
+  testDev<<<1, 1>>>(U, V_T, SIGMA, M, m, n, temp, new_M);
+  // printMat<<<1, 1>>>(new_M, m, n);
+  // printMat<<<1, 1>>>(M, m, n);
+  cudaFree(temp);
+  cudaFree(new_M);
+}
+
 void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
                  double **V_T, int *SIGMAm, int *SIGMAn, double **D_HAT, int *K,
                  int retention) {
@@ -429,19 +463,20 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   double *dev_M, *dev_M_T, *dev_S, *dev_e, *dev_E, *dev_new_E, *dev_eigen_total,
       *dev_SIGMA, *dev_SIGMA_INV, *dev_V_T, *dev_U, *dev_W, *dev_D_HAT;
 
-  int *dev_k, *dev_indices, numblocks = (m * n + BLOCKSIZE - 1) / BLOCKSIZE;
+  int *dev_k, *dev_indices,
+      numblocks = (m * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
 
   cudaMalloc(&dev_M, sizeof(double) * m * n);
   cudaMemcpy(dev_M, D, sizeof(double) * m * n, cudaMemcpyHostToDevice);
   cudaMalloc(&dev_M_T, sizeof(double) * m * n);
 
-  TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_M, m, n, dev_M_T);
+  TRANSPOSE<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_M, m, n, dev_M_T);
 
   cudaMalloc(&dev_S, sizeof(double) * n * n);
 
-  dim3 dimBlock(BLOCKSIZE, BLOCKSIZE);
-  dim3 dimGrid((n + BLOCKSIZE - 1) / BLOCKSIZE,
-               (n + BLOCKSIZE - 1) / BLOCKSIZE);
+  dim3 dimBlock(SQUARE_BLOCKSIZE, SQUARE_BLOCKSIZE);
+  dim3 dimGrid((n + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE,
+               (n + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE);
 
   MATMUL2<<<dimGrid, dimBlock>>>(n, m, n, dev_M_T, dev_M, dev_S);
 
@@ -458,12 +493,17 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   bool *converged;
   cudaMalloc(&converged, sizeof(bool));
-  numblocks = ((n / 2) + BLOCKSIZE - 1) / BLOCKSIZE;
-  ODD_EVEN_SORT<<<numblocks, BLOCKSIZE>>>(dev_e, dev_indices, n, converged);
+  // numblocks = (((n + 1) / 2) + BLOCKSIZE - 1) / BLOCKSIZE;
+  // printf("num %d\n", numblocks);
+  ODD_EVEN_SORT<<<1, LINEAR_BLOCKSIZE>>>(dev_e, dev_indices, n, converged);
   cudaFree(converged);
 
-  numblocks = (n * n + BLOCKSIZE - 1) / BLOCKSIZE;
-  ARRANGE<<<numblocks, BLOCKSIZE>>>(dev_indices, dev_E, dev_new_E, n, n);
+  numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  ARRANGE<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_indices, dev_E, dev_new_E, n, n);
+
+  // printVec<<<1, 1>>>(dev_e, n);
+  // printVec<<<1, 1>>>(dev_indices, n);
+
   cudaFree(dev_indices);
 
   cudaFree(dev_E);
@@ -471,16 +511,16 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_SIGMA, sizeof(double) * n);
   cudaMalloc(&dev_SIGMA_INV, sizeof(double) * n);
-  numblocks = (n + BLOCKSIZE - 1) / BLOCKSIZE;
-  GET_SINGULAR_VALS<<<numblocks, BLOCKSIZE>>>(n, dev_e, dev_SIGMA,
-                                              dev_SIGMA_INV);
+  numblocks = (n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  GET_SINGULAR_VALS<<<numblocks, LINEAR_BLOCKSIZE>>>(n, dev_e, dev_SIGMA,
+                                                     dev_SIGMA_INV);
 
   cudaMalloc(&dev_eigen_total, sizeof(int));
   GET_EIGEN_SUM<<<1, 1>>>(dev_eigen_total, dev_e, n);
 
   cudaMalloc(&dev_V_T, sizeof(double) * n * n);
-  numblocks = (n * n + BLOCKSIZE - 1) / BLOCKSIZE;
-  TRANSPOSE<<<numblocks, BLOCKSIZE>>>(dev_E, n, n, dev_V_T);
+  numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  TRANSPOSE<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_E, n, n, dev_V_T);
 
   cudaMalloc(&dev_U, sizeof(double) * m * m);
   GET_U(m, n, dev_M, dev_E, dev_SIGMA_INV, dev_U);
@@ -488,6 +528,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_k, sizeof(int));
   GET_RETENTION<<<1, 1>>>(dev_k, n, dev_e, dev_eigen_total, retention);
+
   cudaFree(dev_eigen_total);
   cudaFree(dev_e);
 
@@ -497,14 +538,16 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaMalloc(&dev_W, sizeof(double) * n * (*K));
   cudaMalloc(&dev_D_HAT, sizeof(double) * m * (*K));
 
-  numblocks = (n * (*K) + BLOCKSIZE - 1) / BLOCKSIZE;
-  GET_W<<<numblocks, BLOCKSIZE>>>(*K, n, dev_W, dev_E);
+  numblocks = (n * (*K) + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  GET_W<<<numblocks, LINEAR_BLOCKSIZE>>>(*K, n, dev_W, dev_E);
 
   cudaFree(dev_E);
 
-  dimGrid =
-      dim3((*K + BLOCKSIZE - 1) / BLOCKSIZE, (m + BLOCKSIZE - 1) / BLOCKSIZE);
+  dimGrid = dim3((*K + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE,
+                 (m + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE);
   MATMUL2<<<dimGrid, dimBlock>>>(m, n, *K, dev_M, dev_W, dev_D_HAT);
+
+  // test(dev_U, dev_SIGMA, dev_V_T, dev_M, m, n);
 
   cudaFree(dev_W);
   cudaFree(dev_M);
@@ -525,7 +568,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaMemcpy(*D_HAT, dev_D_HAT, sizeof(double) * m * (*K),
              cudaMemcpyDeviceToHost);
 
-  // printMat<<<1, 1>>>(dev_U, m, m);
+  // printMat<<<1, 1>>>(dev_D_HAT, m, *K);
 
   cudaFree(dev_D_HAT);
 
