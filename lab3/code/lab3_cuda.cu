@@ -91,33 +91,17 @@ __device__ void ROTATE(int k, int l, int i, int j, double c, double s,
 }
 
 __global__ void INIT1(int N, double *E) {
-
   int i = blockIdx.x * blockDim.x + threadIdx.x;
-  // int stride = blockDim.x * gridDim.x;
-  // int i;
 
-  // for (i = index; i < N * N; i += stride) {
   if (i < N * N) {
     E[i] = ((i / N) == (i % N));
   }
-  // }
 }
 
 __global__ void INIT2(int *state, int N) { *state = N; }
 
 // TODO
 __global__ void INIT3(int *ind, double *e, double *S, int N, bool *changed) {
-
-  // int index = blockIdx.x * blockDim.x + threadIdx.x;
-  // int stride = blockDim.x * gridDim.x;
-  // int k;
-
-  // for (k = index; k < N; k += stride) {
-  //   MAXIND(k, N, S, &ind[k]);
-  //   e[k] = S[INDEX(k, k, N, N)];
-  //   changed[k] = true;
-  // }
-
   int k = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (k < N) {
@@ -167,15 +151,6 @@ __global__ void UPDATE_COMBINED(int *k, int *l, double *t, double *e,
 
 __global__ void ROTATE_MULTIPLE1(int *k, int *l, double *c, double *s,
                                  double *S, int N) {
-
-  // int index = blockIdx.x * blockDim.x + threadIdx.x;
-  // int stride = blockDim.x * gridDim.x;
-  // int i;
-
-  // for (i = index; i < *k; i += stride) {
-  //   ROTATE(i, *k, i, *l, *c, *s, S, N);
-  // }
-
   int i = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (i < *k) {
@@ -185,15 +160,6 @@ __global__ void ROTATE_MULTIPLE1(int *k, int *l, double *c, double *s,
 
 __global__ void ROTATE_MULTIPLE2(int *k, int *l, double *c, double *s,
                                  double *S, int N) {
-
-  // int index = blockIdx.x * blockDim.x + threadIdx.x + (*k) + 1;
-  // int stride = blockDim.x * gridDim.x;
-  // int i;
-
-  // for (i = index; i < *l; i += stride) {
-  //   ROTATE(*k, i, i, *l, *c, *s, S, N);
-  // }
-
   int i = blockIdx.x * blockDim.x + threadIdx.x + (*k) + 1;
 
   if (i < *l) {
@@ -203,15 +169,6 @@ __global__ void ROTATE_MULTIPLE2(int *k, int *l, double *c, double *s,
 
 __global__ void ROTATE_MULTIPLE3(int *k, int *l, double *c, double *s,
                                  double *S, int N) {
-
-  // int index = blockIdx.x * blockDim.x + threadIdx.x + (*l) + 1;
-  // int stride = blockDim.x * gridDim.x;
-  // int i;
-
-  // for (i = index; i < N; i += stride) {
-  //   ROTATE(*k, i, *l, i, *c, *s, S, N);
-  // }
-
   int i = blockIdx.x * blockDim.x + threadIdx.x + (*l) + 1;
 
   if (i < N) {
@@ -221,19 +178,6 @@ __global__ void ROTATE_MULTIPLE3(int *k, int *l, double *c, double *s,
 
 __global__ void UPDATE_E(int N, double *E, int *k, int *l, double *c,
                          double *s) {
-
-  // int index = blockIdx.x * blockDim.x + threadIdx.x;
-  // int stride = blockDim.x * gridDim.x;
-  // int i;
-  // double Eik, Eil;
-
-  // for (i = index; i < N; i += stride) {
-  //   Eik = E[INDEX(i, *k, N, N)];
-  //   Eil = E[INDEX(i, *l, N, N)];
-  //   E[INDEX(i, *k, N, N)] = (*c) * Eik - (*s) * Eil;
-  //   E[INDEX(i, *l, N, N)] = (*s) * Eik + (*c) * Eil;
-  // }
-
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   double Eik, Eil;
 
@@ -251,15 +195,6 @@ __global__ void UPDATE_IND(int *k, int *l, int *ind, int N, double *S) {
 }
 
 __global__ void TRANSPOSE(double *M, int m, int n, double *M_T) {
-
-  // int index = blockIdx.x * blockDim.x + threadIdx.x;
-  // int stride = blockDim.x * gridDim.x;
-  // int i;
-
-  // for (i = index; i < n * m; i += stride) {
-  //   M_T[i] = M[INDEX(i % m, i / m, m, n)];
-  // }
-
   int i = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (i < n * m) {
@@ -375,46 +310,6 @@ __global__ void GET_EIGEN_SUM(double *eigen_total, double *e, int n) {
 
 __global__ void MULTIPLY_SIGMA_INV(int m, int n, double *M, double *V,
                                    double *SIGMA_INV, double *U) {
-  // int index = blockIdx.x * blockDim.x + threadIdx.x;
-  // int stride = blockDim.x * gridDim.x;
-  // int l;
-  // int j;
-
-  // for (l = index; l < m * m; l += stride) {
-  //   j = l % m;
-  //   if (j < n) {
-  //     U[l] = MV[INDEX(l / m, j, m, n)] * SIGMA_INV[j];
-  //   } else {
-  //     U[l] = 0;
-  //   }
-  // }
-
-  // int row = blockIdx.y * blockDim.y + threadIdx.y;
-  // int col = blockIdx.x * blockDim.x + threadIdx.x;
-  // int i;
-  // double sum = 0;
-
-  // if (row < p && col < r) {
-  //   for (i = 0; i < q; i++) {
-  //     sum += A[INDEX(row, i, p, q)] * B[INDEX(i, col, q, r)];
-  //   }
-  //   C[INDEX(row, col, p, r)] = sum;
-  // }
-
-  // if(row < m )
-
-  // int l = blockIdx.x * blockDim.x + threadIdx.x;
-  // int j;
-
-  // if (l < m * m) {
-  //   j = l % m;
-  //   if (j < n) {
-  //     U[l] = MV[INDEX(l / m, j, m, n)] * SIGMA_INV[j];
-  //   } else {
-  //     U[l] = 0;
-  //   }
-  // }
-
   int row = blockIdx.y * blockDim.y + threadIdx.y;
   int col = blockIdx.x * blockDim.x + threadIdx.x;
   int i;
@@ -434,23 +329,11 @@ __global__ void MULTIPLY_SIGMA_INV(int m, int n, double *M, double *V,
 
 void GET_U(int m, int n, double *dev_M, double *dev_V, double *dev_SIGMA_INV,
            double *dev_U) {
-  // double *dev_MV;
-  // cudaMalloc(&dev_MV, sizeof(double) * m * n);
-
   dim3 dimBlock(BLOCKSIZE, BLOCKSIZE);
   dim3 dimGrid((m + BLOCKSIZE - 1) / BLOCKSIZE,
                (m + BLOCKSIZE - 1) / BLOCKSIZE);
   MULTIPLY_SIGMA_INV<<<dimGrid, dimBlock>>>(m, n, dev_M, dev_V, dev_SIGMA_INV,
                                             dev_U);
-
-  // MATMUL2<<<dimBlock, dimGrid>>>(m, n, n, dev_M, dev_V, dev_MV);
-
-  // int numblocks = (m * m + BLOCKSIZE - 1) / BLOCKSIZE;
-  // MULTIPLY_SIGMA_INV<<<numblocks, BLOCKSIZE>>>(dev_MV, dev_SIGMA_INV, dev_U,
-  // m,
-  //  n);
-
-  // cudaFree(dev_MV);
 }
 
 __global__ void GET_RETENTION(int *k, int n, double *e, double *eigen_total,
@@ -471,15 +354,6 @@ __global__ void GET_RETENTION(int *k, int n, double *e, double *eigen_total,
 }
 
 __global__ void GET_W(int k_retended, int n, double *W, double *E) {
-
-  // int index = blockIdx.x * blockDim.x + threadIdx.x;
-  // int stride = blockDim.x * gridDim.x;
-  // int i;
-
-  // for (i = index; i < n * k_retended; i += stride) {
-  //   W[i] = E[INDEX(i / k_retended, i % k_retended, n, n)];
-  // }
-
   int i = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (i < n * k_retended) {
