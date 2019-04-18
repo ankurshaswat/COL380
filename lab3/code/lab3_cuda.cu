@@ -58,9 +58,12 @@ __global__ void printVec(int *vec, int n1) {
 // TODO
 __device__ void MAXIND(int k, int N, double *S, int *result) {
   int m = k + 1, i;
+  double max_ = fabs(S[INDEX(k, m, N, N)]), temp;
   for (i = k + 2; i < N; i++) {
-    if (fabsf(S[INDEX(k, i, N, N)]) > fabsf(S[INDEX(k, m, N, N)])) {
+    temp = fabs(S[INDEX(k, i, N, N)]);
+    if (temp > max_) {
       m = i;
+      max_ = temp;
     }
   }
   *result = m;
@@ -74,10 +77,14 @@ __device__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
     e[k] = 0;
   }
 
-  if (changed[k] && fabsf(ek_prev - e[k]) < JACOBI_TOLERANCE) {
+  double change = fabs(ek_prev - e[k]);
+
+  // printf("%f\n", change);
+
+  if (changed[k] && change < JACOBI_TOLERANCE) {
     changed[k] = false;
     (*state)--;
-  } else if ((!changed[k]) && fabsf(ek_prev - e[k]) > JACOBI_TOLERANCE) {
+  } else if ((!changed[k]) && change > JACOBI_TOLERANCE) {
     changed[k] = true;
     (*state)++;
   }
@@ -111,16 +118,83 @@ __global__ void INIT3(int *ind, double *e, double *S, int N, bool *changed) {
   }
 }
 
+__global__ void BEST_M_PARALLEL(int *m, int N, double *S, int *ind,
+                                int *temp_indices, double *temp_maximums,
+                                int offset, int num_elements) {
+
+  int tid = threadIdx.x;
+  int gid = tid + blockIdx.x * blockDim.x;
+  int stride = blockDim.x * gridDim.x;
+
+  int max_indice = 0;
+  double max_ = fabs(S[INDEX(0, ind[0], N, N)]);
+
+  double temp;
+
+  int i, k;
+
+  for (i = gid; i < num_elements; i += stride) {
+
+    k = i + offset;
+
+    temp = fabs(S[INDEX(k, ind[k], N, N)]);
+    if (temp > max_) {
+      max_ = temp;
+      max_indice = k;
+    }
+  }
+
+  __shared__ int max_ms_local[LINEAR_BLOCKSIZE];
+  __shared__ double maximums[LINEAR_BLOCKSIZE];
+
+  max_ms_local[tid] = max_indice;
+  maximums[tid] = max_;
+
+  __syncthreads();
+  for (int size = LINEAR_BLOCKSIZE / 2; size > 0; size /= 2) {
+    if (tid < size && maximums[tid] < maximums[tid + size]) {
+      maximums[tid] = maximums[tid + size];
+      max_ms_local[tid] = max_ms_local[tid + size];
+    }
+    __syncthreads();
+  }
+
+  if (tid == 0) {
+    temp_maximums[blockIdx.x] = max_ms_local[0];
+    temp_indices[blockIdx.x] = maximums[0];
+    *m = max_ms_local[0];
+  }
+}
+
+__host__ void BEST_M_HOST(int *dev_m, int N, double *dev_S, int *dev_ind,
+                          double *dev_temp_maximums, int *dev_temp_indices) {
+
+  int numblocks = (N - 1 + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+
+  // printf("Kernels %d %d\n", numblocks, LINEAR_BLOCKSIZE);
+  BEST_M_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(
+      dev_m, N, dev_S, dev_ind, dev_temp_indices, dev_temp_maximums, 1, N - 2);
+  if (numblocks > 1) {
+    BEST_M_PARALLEL<<<1, LINEAR_BLOCKSIZE>>>(dev_m, N, dev_S, dev_ind,
+                                             dev_temp_indices,
+                                             dev_temp_maximums, 0, numblocks);
+  }
+}
+
 // TODO
 __global__ void BEST_M(int *m, int N, double *S, int *ind) {
   *m = 0;
   int k;
+  double max_ = fabs(S[INDEX(*m, ind[*m], N, N)]), temp;
   for (k = 1; k < N - 1; k++) {
-    if (fabsf(S[INDEX(k, ind[k], N, N)]) > fabsf(S[INDEX(*m, ind[*m], N, N)])) {
+    temp = fabs(S[INDEX(k, ind[k], N, N)]);
+    if (temp > max_) {
       *m = k;
+      max_ = temp;
     }
   }
 }
+
 __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
                               bool *converged) {
   int index_global = blockIdx.x * blockDim.x + threadIdx.x;
@@ -182,7 +256,7 @@ __global__ void GET_S_C(int *k, int *l, int *m, double *c, double *s, double *t,
   *l = ind[*m];
   double p = S[INDEX(*k, *l, N, N)];
   double y = (e[*l] - e[*k]) / 2;
-  double d = fabsf(y) + sqrt(p * p + y * y);
+  double d = fabs(y) + sqrt(p * p + y * y);
   double r = sqrt(p * p + d * d);
 
   *c = d / r;
@@ -240,6 +314,91 @@ __global__ void UPDATE_E(int N, double *E, int *k, int *l, double *c,
     Eil = E[INDEX(i, *l, N, N)];
     E[INDEX(i, *k, N, N)] = (*c) * Eik - (*s) * Eil;
     E[INDEX(i, *l, N, N)] = (*s) * Eik + (*c) * Eil;
+  }
+}
+
+__global__ void MAXIND_PARALLEL(int *k_pointer, int N, double *S, int *ind,
+                                int *temp_indices, double *temp_maximums,
+                                int problem_size) {
+  // int m = k + 1, i;
+  // double max_ = fabs(S[INDEX(k, m, N, N)]), temp;
+  // for (i = k + 2; i < N; i++) {
+  //   temp = fabs(S[INDEX(k, i, N, N)]);
+  //   if (temp > max_) {
+  //     m = i;
+  //     max_ = temp;
+  //   }
+  // }
+  // *result = m;
+  int k = *k_pointer;
+  int num_elements = N - k - 2;
+  int offset = k + 2;
+
+  if (problem_size != -1) {
+    num_elements = problem_size;
+    offset = 0;
+  }
+
+  int tid = threadIdx.x;
+  int gid = tid + blockIdx.x * blockDim.x;
+  int stride = blockDim.x * gridDim.x;
+
+  int m = k + 1;
+  double max_ = fabs(S[INDEX(k, m, N, N)]), temp;
+  int i, i_off;
+
+  for (i = gid; i < num_elements; i += stride) {
+
+    i_off = i + offset;
+    temp = fabs(S[INDEX(k, i_off, N, N)]);
+    if (temp > max_) {
+      m = i_off;
+      max_ = temp;
+    }
+  }
+
+  __shared__ int m_shared[LINEAR_BLOCKSIZE];
+  __shared__ double max_shared[LINEAR_BLOCKSIZE];
+
+  m_shared[tid] = m;
+  max_shared[tid] = max_;
+
+  __syncthreads();
+  for (int size = LINEAR_BLOCKSIZE / 2; size > 0; size /= 2) {
+    if (tid < size && max_shared[tid] < max_shared[tid + size]) {
+      max_shared[tid] = max_shared[tid + size];
+      m_shared[tid] = m_shared[tid + size];
+    }
+    __syncthreads();
+  }
+
+  if (tid == 0) {
+    temp_maximums[blockIdx.x] = m_shared[0];
+    temp_indices[blockIdx.x] = max_shared[0];
+    ind[k] = m_shared[0];
+  }
+}
+
+__host__ void UPDATE_IND_PARALLEL(int *dev_k, int *dev_l, int *dev_ind, int N,
+                                  double *dev_S, double *dev_temp_maximums,
+                                  int *dev_temp_indices) {
+  int numblocks = (N + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+
+  // printf("Kernels %d %d\n", numblocks, LINEAR_BLOCKSIZE);
+  MAXIND_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(
+      dev_k, N, dev_S, dev_ind, dev_temp_indices, dev_temp_maximums, -1);
+  if (numblocks > 1) {
+    MAXIND_PARALLEL<<<1, LINEAR_BLOCKSIZE>>>(dev_k, N, dev_S, dev_ind,
+                                             dev_temp_indices,
+                                             dev_temp_maximums, numblocks);
+  }
+
+  MAXIND_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(
+      dev_l, N, dev_S, dev_ind, dev_temp_indices, dev_temp_maximums, -1);
+  if (numblocks > 1) {
+    MAXIND_PARALLEL<<<1, LINEAR_BLOCKSIZE>>>(dev_l, N, dev_S, dev_ind,
+                                             dev_temp_indices,
+                                             dev_temp_maximums, numblocks);
   }
 }
 
@@ -361,6 +520,10 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   double *dev_c, *dev_s, *dev_t_;
   bool *dev_changed;
   int state = n;
+  int numblocks = (n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+
+  double *dev_temp_maximums;
+  int *dev_temp_indices;
 
   cudaMalloc(&dev_state, sizeof(int));
   cudaMalloc(&dev_ind, sizeof(int) * n);
@@ -371,8 +534,11 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   cudaMalloc(&dev_c, sizeof(double));
   cudaMalloc(&dev_s, sizeof(double));
   cudaMalloc(&dev_t_, sizeof(double));
+  cudaMalloc(&dev_temp_maximums, sizeof(double) * numblocks);
+  cudaMalloc(&dev_temp_indices, sizeof(int) * numblocks);
 
-  int numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+
   INIT1<<<numblocks, LINEAR_BLOCKSIZE>>>(n, dev_E);
   INIT2<<<1, 1>>>(dev_state, n);
 
@@ -381,12 +547,13 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
 
   int count = 0;
 
-  while (state != 0 && count < 10 * n) {
+  int checkpoint = max(1, (n * n) / 100);
+  // printf("%d",checkpoint);
+  while (state > 0) {
     count++;
 
-    // printf("%d %d\n", state, count);
-
-    BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
+    // BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
+    BEST_M_HOST(dev_m, n, dev_S, dev_ind, dev_temp_maximums, dev_temp_indices);
     GET_S_C<<<1, 1>>>(dev_k, dev_l, dev_m, dev_c, dev_s, dev_t_, n, dev_ind,
                       dev_S, dev_e);
     UPDATE_COMBINED<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
@@ -400,10 +567,17 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
                                                       dev_s, dev_S, n);
     UPDATE_E<<<numblocks, LINEAR_BLOCKSIZE>>>(n, dev_E, dev_k, dev_l, dev_c,
                                               dev_s);
-    UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
+    // UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
+    UPDATE_IND_PARALLEL(dev_k, dev_l, dev_ind, n, dev_S, dev_temp_maximums,
+                        dev_temp_indices);
 
-    cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
+    if (count % checkpoint == 0) {
+      // printf("hey\n");
+      cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
+      cudaDeviceSynchronize();
+      printf("Checkpoint= %d\tState= %d\tIterNumber= %d\n",
+             count / checkpoint, state, count);
+    }
   }
   // printf("%d %d\n", state, count);
 
@@ -416,6 +590,9 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   cudaFree(dev_c);
   cudaFree(dev_s);
   cudaFree(dev_t_);
+
+  cudaFree(dev_temp_maximums);
+  cudaFree(dev_temp_indices);
 }
 
 __global__ void testDev(double *U, double *V_T, double *SIGMA, double *M, int m,
@@ -436,8 +613,8 @@ __global__ void testDev(double *U, double *V_T, double *SIGMA, double *M, int m,
       }
       new_M[INDEX(i, j, m, n)] = sum;
       // printf("%f\n",M[INDEX(i, j, m, n)] - sum);
-      if (fabsf(M[INDEX(i, j, m, n)] - sum) > max_error) {
-        max_error = fabsf(M[INDEX(i, j, m, n)] - sum);
+      if (fabs(M[INDEX(i, j, m, n)] - sum) > max_error) {
+        max_error = fabs(M[INDEX(i, j, m, n)] - sum);
       }
     }
   }
