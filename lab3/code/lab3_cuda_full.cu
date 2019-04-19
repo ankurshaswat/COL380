@@ -1,150 +1,8 @@
 #include "lab3_cuda.h"
-#include <cmath>
-#include <fstream>
-#include <iostream>
-#include <malloc.h>
 
-using namespace std;
-
-#define LINEAR_BLOCKSIZE 1024
 #define SQUARE_BLOCKSIZE 32
-
-#define TOLERANCE 0.001
-#define JACOBI_UPDATE_TOLERANCE 0.001
-
-__host__ int inline INDEX_HOST(int i, int j, int m, int n) { return i * n + j; }
-
-__host__ int maxind(int k, double *S, int N) {
-  int m = k + 1, i;
-
-  for (i = k + 2; i < N; i++) {
-    if (fabs(S[INDEX_HOST(k, i, N, N)]) > fabs(S[INDEX_HOST(k, m, N, N)])) {
-      m = i;
-    }
-  }
-
-  return m;
-}
-
-__host__ void update(int k, double t, double *e, bool *changed, int *state) {
-  double ek_prev = e[k];
-  e[k] = ek_prev + t;
-
-  if (e[k] < 0)
-    e[k] = 0;
-
-  if (changed[k] && fabs(ek_prev - e[k]) < JACOBI_UPDATE_TOLERANCE) {
-    changed[k] = false;
-    *state = *state - 1;
-  } else if ((!changed[k]) && fabs(ek_prev - e[k]) > JACOBI_UPDATE_TOLERANCE) {
-    changed[k] = true;
-    *state = *state + 1;
-  }
-}
-
-__host__ void rotate(int k, int l, int i, int j, double c, double s, double *S,
-                     int N) {
-  double Skl = S[INDEX_HOST(k, l, N, N)], Sij = S[INDEX_HOST(i, j, N, N)];
-  S[INDEX_HOST(k, l, N, N)] = c * Skl - s * Sij;
-  S[INDEX_HOST(i, j, N, N)] = s * Skl + c * Sij;
-}
-
-__host__ void update_e(int k, int l, int i, int j, double c, double s,
-                       double *E, int N) {
-  double Eik = E[INDEX_HOST(i, k, N, N)], Eil = E[INDEX_HOST(i, l, N, N)];
-  E[INDEX_HOST(i, k, N, N)] = c * Eik - s * Eil;
-  E[INDEX_HOST(i, l, N, N)] = s * Eik + c * Eil;
-}
-
-__host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
-
-  double *E = (double *)malloc(sizeof(double) * N * N);
-  double *e = (double *)malloc(sizeof(double) * N);
-  int *ind = (int *)malloc(sizeof(int) * N);
-  bool *changed = (bool *)malloc(sizeof(bool) * N);
-  double *S = (double *)malloc(sizeof(double) * N * N);
-
-  cudaMemcpy(S, dev_S, sizeof(double) * N * N, cudaMemcpyDeviceToHost);
-  cudaDeviceSynchronize();
-
-  for (int i = 0; i < N; i++) {
-    for (int j = 0; j < N; j++) {
-      E[i * N + j] = 0;
-    }
-    E[INDEX_HOST(i, i, N, N)] = 1;
-  }
-
-  int state = N;
-  int count = 0;
-
-  for (int k = 0; k < N; k++) {
-    ind[k] = maxind(k, S, N);
-    e[k] = S[INDEX_HOST(k, k, N, N)];
-    changed[k] = true;
-  }
-
-  while (state != 0) {
-    count++;
-    int m = 0;
-
-    for (int k = 1; k < N - 1; k++) {
-      if (fabs(S[INDEX_HOST(k, ind[k], N, N)]) >
-          fabs(S[INDEX_HOST(m, ind[m], N, N)])) {
-        m = k;
-      }
-    }
-
-    int k = m;
-    int l = ind[m];
-    double p = S[INDEX_HOST(k, l, N, N)];
-    double y = (e[l] - e[k]) / 2.0;
-    double d = fabs(y) + sqrt(p * p + y * y);
-    double r = sqrt(p * p + d * d);
-    double c = d / r;
-    double s = p / r;
-    double t = (p * p) / d;
-
-    if (y < 0.0) {
-      s = -s;
-      t = -t;
-    }
-
-    S[INDEX_HOST(k, l, N, N)] = 0.0;
-    update(k, -t, e, changed, &state);
-    update(l, t, e, changed, &state);
-
-    for (int i = 0; i < k; i++) {
-      rotate(i, k, i, l, c, s, S, N);
-    }
-    for (int i = k + 1; i < l; i++) {
-      rotate(k, i, i, l, c, s, S, N);
-    }
-    for (int i = l + 1; i < N; i++) {
-      rotate(k, i, l, i, c, s, S, N);
-    }
-
-    for (int i = 0; i < N; i++) {
-      update_e(k, l, i, i, c, s, E, N);
-    }
-
-    ind[k] = maxind(k, S, N);
-    ind[l] = maxind(l, S, N);
-
-    printf("%d %d\n", state, count);
-  }
-
-  cudaMemcpy(dev_E, E, sizeof(double) * N * N, cudaMemcpyHostToDevice);
-  cudaMemcpy(dev_e, e, sizeof(double) * N, cudaMemcpyHostToDevice);
-
-  free(changed);
-  free(ind);
-  free(S);
-
-  cudaDeviceSynchronize();
-
-  free(E);
-  free(e);
-}
+#define LINEAR_BLOCKSIZE 1024
+#define JACOBI_TOLERANCE 0.001
 
 __device__ inline int INDEX(int i1, int i2, int l1, int l2) {
   return i1 * l2 + i2;
@@ -223,10 +81,10 @@ __device__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
 
   // printf("%f\n", change);
 
-  if (changed[k] && change < JACOBI_UPDATE_TOLERANCE) {
+  if (changed[k] && change < JACOBI_TOLERANCE) {
     changed[k] = false;
     (*state)--;
-  } else if ((!changed[k]) && change > JACOBI_UPDATE_TOLERANCE) {
+  } else if ((!changed[k]) && change > JACOBI_TOLERANCE) {
     changed[k] = true;
     (*state)++;
   }
@@ -654,6 +512,87 @@ __global__ void GET_W(int k_retended, int n, double *W, double *E) {
   if (i < n * k_retended) {
     W[i] = E[INDEX(i / k_retended, i % k_retended, n, n)];
   }
+}
+
+void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
+
+  int *dev_state, *dev_ind, *dev_m, *dev_k, *dev_l;
+  double *dev_c, *dev_s, *dev_t_;
+  bool *dev_changed;
+  int state = n;
+  int numblocks = (n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+
+  double *dev_temp_maximums;
+  int *dev_temp_indices;
+
+  cudaMalloc(&dev_state, sizeof(int));
+  cudaMalloc(&dev_ind, sizeof(int) * n);
+  cudaMalloc(&dev_changed, sizeof(bool) * n);
+  cudaMalloc(&dev_m, sizeof(int));
+  cudaMalloc(&dev_k, sizeof(int));
+  cudaMalloc(&dev_l, sizeof(int));
+  cudaMalloc(&dev_c, sizeof(double));
+  cudaMalloc(&dev_s, sizeof(double));
+  cudaMalloc(&dev_t_, sizeof(double));
+  cudaMalloc(&dev_temp_maximums, sizeof(double) * numblocks);
+  cudaMalloc(&dev_temp_indices, sizeof(int) * numblocks);
+
+  numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+
+  INIT1<<<numblocks, LINEAR_BLOCKSIZE>>>(n, dev_E);
+  INIT2<<<1, 1>>>(dev_state, n);
+
+  numblocks = (n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  INIT3<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_ind, dev_e, dev_S, n, dev_changed);
+
+  int count = 0;
+
+  int checkpoint = max(1, (n * n) / 100);
+  // printf("%d",checkpoint);
+  while (state > 0) {
+    count++;
+
+    // BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
+    BEST_M_HOST(dev_m, n, dev_S, dev_ind, dev_temp_maximums, dev_temp_indices);
+    GET_S_C<<<1, 1>>>(dev_k, dev_l, dev_m, dev_c, dev_s, dev_t_, n, dev_ind,
+                      dev_S, dev_e);
+    UPDATE_COMBINED<<<1, 1>>>(dev_k, dev_l, dev_t_, dev_e, dev_changed,
+                              dev_state);
+
+    ROTATE_MULTIPLE1<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_k, dev_l, dev_c,
+                                                      dev_s, dev_S, n);
+    ROTATE_MULTIPLE2<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_k, dev_l, dev_c,
+                                                      dev_s, dev_S, n);
+    ROTATE_MULTIPLE3<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_k, dev_l, dev_c,
+                                                      dev_s, dev_S, n);
+    UPDATE_E<<<numblocks, LINEAR_BLOCKSIZE>>>(n, dev_E, dev_k, dev_l, dev_c,
+                                              dev_s);
+    // UPDATE_IND<<<1, 1>>>(dev_k, dev_l, dev_ind, n, dev_S);
+    UPDATE_IND_PARALLEL(dev_k, dev_l, dev_ind, n, dev_S, dev_temp_maximums,
+                        dev_temp_indices);
+
+    if (count % checkpoint == 0) {
+      // printf("hey\n");
+      cudaMemcpy(&state, dev_state, sizeof(int), cudaMemcpyDeviceToHost);
+      cudaDeviceSynchronize();
+      printf("Checkpoint= %d\tState= %d\tIterNumber= %d\n",
+             count / checkpoint, state, count);
+    }
+  }
+  // printf("%d %d\n", state, count);
+
+  cudaFree(dev_state);
+  cudaFree(dev_ind);
+  cudaFree(dev_changed);
+  cudaFree(dev_m);
+  cudaFree(dev_k);
+  cudaFree(dev_l);
+  cudaFree(dev_c);
+  cudaFree(dev_s);
+  cudaFree(dev_t_);
+
+  cudaFree(dev_temp_maximums);
+  cudaFree(dev_temp_indices);
 }
 
 __global__ void testDev(double *U, double *V_T, double *SIGMA, double *M, int m,
