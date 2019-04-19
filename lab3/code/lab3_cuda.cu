@@ -67,9 +67,12 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
   cudaMemcpy(S, dev_S, sizeof(double) * N * N, cudaMemcpyDeviceToHost);
   cudaDeviceSynchronize();
 
-  for (int i = 0; i < N; i++) {
-    for (int j = 0; j < N; j++) {
-      E[i * N + j] = 0;
+  int i, j, m, k, l;
+  double p, y, d, r, c, s, t;
+
+  for (i = 0; i < N; i++) {
+    for (j = 0; j < N; j++) {
+      E[INDEX_HOST(i, j, N, N)] = 0;
     }
     E[INDEX_HOST(i, i, N, N)] = 1;
   }
@@ -77,7 +80,7 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
   int state = N;
   int count = 0;
 
-  for (int k = 0; k < N; k++) {
+  for (k = 0; k < N; k++) {
     ind[k] = maxind(k, S, N);
     e[k] = S[INDEX_HOST(k, k, N, N)];
     changed[k] = true;
@@ -85,24 +88,24 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
 
   while (state != 0) {
     count++;
-    int m = 0;
+    m = 0;
 
-    for (int k = 1; k < N - 1; k++) {
+    for (k = 1; k < N - 1; k++) {
       if (fabs(S[INDEX_HOST(k, ind[k], N, N)]) >
           fabs(S[INDEX_HOST(m, ind[m], N, N)])) {
         m = k;
       }
     }
 
-    int k = m;
-    int l = ind[m];
-    double p = S[INDEX_HOST(k, l, N, N)];
-    double y = (e[l] - e[k]) / 2.0;
-    double d = fabs(y) + sqrt(p * p + y * y);
-    double r = sqrt(p * p + d * d);
-    double c = d / r;
-    double s = p / r;
-    double t = (p * p) / d;
+    k = m;
+    l = ind[m];
+    p = S[INDEX_HOST(k, l, N, N)];
+    y = (e[l] - e[k]) / 2.0;
+    d = fabs(y) + sqrt(p * p + y * y);
+    r = sqrt(p * p + d * d);
+    c = d / r;
+    s = p / r;
+    t = (p * p) / d;
 
     if (y < 0.0) {
       s = -s;
@@ -113,24 +116,26 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
     update(k, -t, e, changed, &state);
     update(l, t, e, changed, &state);
 
-    for (int i = 0; i < k; i++) {
+    for (i = 0; i < k; i++) {
       rotate(i, k, i, l, c, s, S, N);
     }
-    for (int i = k + 1; i < l; i++) {
+    for (i = k + 1; i < l; i++) {
       rotate(k, i, i, l, c, s, S, N);
     }
-    for (int i = l + 1; i < N; i++) {
+    for (i = l + 1; i < N; i++) {
       rotate(k, i, l, i, c, s, S, N);
     }
 
-    for (int i = 0; i < N; i++) {
+    for (i = 0; i < N; i++) {
       update_e(k, l, i, i, c, s, E, N);
     }
 
     ind[k] = maxind(k, S, N);
     ind[l] = maxind(l, S, N);
 
-    printf("%d %d\n", state, count);
+    if (count % 1000 == 0) {
+      printf("%d %d\n", state, count);
+    }
   }
 
   cudaMemcpy(dev_E, E, sizeof(double) * N * N, cudaMemcpyHostToDevice);
@@ -148,193 +153,6 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
 
 __device__ inline int INDEX(int i1, int i2, int l1, int l2) {
   return i1 * l2 + i2;
-}
-
-__global__ void printMat(double *mat, int n1, int n2) {
-  printf("\n");
-  for (int i = 0; i < n1; i++) {
-    for (int j = 0; j < n2; j++) {
-      printf("%f ", mat[INDEX(i, j, n1, n2)]);
-    }
-    printf("\n");
-  }
-  printf("\n");
-}
-
-__global__ void printVec(double *vec, int n1) {
-  printf("\n");
-  for (int i = 0; i < n1; i++) {
-    printf("%f ", vec[i]);
-  }
-  printf("\n");
-  printf("\n");
-}
-
-__device__ void printVecDev(double *vec, int n1) {
-  printf("\n");
-  for (int i = 0; i < n1; i++) {
-    printf("%f ", vec[i]);
-  }
-  printf("\n");
-  printf("\n");
-}
-
-__global__ void printVec(bool *vec, int n1) {
-  printf("\n");
-  for (int i = 0; i < n1; i++) {
-    printf("%d ", vec[i]);
-  }
-  printf("\n");
-  printf("\n");
-}
-
-__global__ void printVec(int *vec, int n1) {
-  printf("\n");
-  for (int i = 0; i < n1; i++) {
-    printf("%d ", vec[i]);
-  }
-  printf("\n");
-  printf("\n");
-}
-
-// TODO
-__device__ void MAXIND(int k, int N, double *S, int *result) {
-  int m = k + 1, i;
-  double max_ = fabs(S[INDEX(k, m, N, N)]), temp;
-  for (i = k + 2; i < N; i++) {
-    temp = fabs(S[INDEX(k, i, N, N)]);
-    if (temp > max_) {
-      m = i;
-      max_ = temp;
-    }
-  }
-  *result = m;
-}
-
-__device__ void UPDATE(int k, double t, double *e, bool *changed, int *state) {
-  double ek_prev = e[k];
-  e[k] = ek_prev + t;
-
-  if (e[k] < 0) {
-    e[k] = 0;
-  }
-
-  double change = fabs(ek_prev - e[k]);
-
-  // printf("%f\n", change);
-
-  if (changed[k] && change < JACOBI_UPDATE_TOLERANCE) {
-    changed[k] = false;
-    (*state)--;
-  } else if ((!changed[k]) && change > JACOBI_UPDATE_TOLERANCE) {
-    changed[k] = true;
-    (*state)++;
-  }
-}
-
-__device__ void ROTATE(int k, int l, int i, int j, double c, double s,
-                       double *S, int N) {
-  double Skl = S[INDEX(k, l, N, N)], Sij = S[INDEX(i, j, N, N)];
-  S[INDEX(k, l, N, N)] = c * Skl - s * Sij;
-  S[INDEX(i, j, N, N)] = s * Skl + c * Sij;
-}
-
-__global__ void INIT1(int N, double *E) {
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-  if (i < N * N) {
-    E[i] = ((i / N) == (i % N));
-  }
-}
-
-__global__ void INIT2(int *state, int N) { *state = N; }
-
-// TODO
-__global__ void INIT3(int *ind, double *e, double *S, int N, bool *changed) {
-  int k = blockIdx.x * blockDim.x + threadIdx.x;
-
-  if (k < N) {
-    MAXIND(k, N, S, &ind[k]);
-    e[k] = S[INDEX(k, k, N, N)];
-    changed[k] = true;
-  }
-}
-
-__global__ void BEST_M_PARALLEL(int *m, int N, double *S, int *ind,
-                                int *temp_indices, double *temp_maximums,
-                                int offset, int num_elements) {
-
-  int tid = threadIdx.x;
-  int gid = tid + blockIdx.x * blockDim.x;
-  int stride = blockDim.x * gridDim.x;
-
-  int max_indice = 0;
-  double max_ = fabs(S[INDEX(0, ind[0], N, N)]);
-
-  double temp;
-
-  int i, k;
-
-  for (i = gid; i < num_elements; i += stride) {
-
-    k = i + offset;
-
-    temp = fabs(S[INDEX(k, ind[k], N, N)]);
-    if (temp > max_) {
-      max_ = temp;
-      max_indice = k;
-    }
-  }
-
-  __shared__ int max_ms_local[LINEAR_BLOCKSIZE];
-  __shared__ double maximums[LINEAR_BLOCKSIZE];
-
-  max_ms_local[tid] = max_indice;
-  maximums[tid] = max_;
-
-  __syncthreads();
-  for (int size = LINEAR_BLOCKSIZE / 2; size > 0; size /= 2) {
-    if (tid < size && maximums[tid] < maximums[tid + size]) {
-      maximums[tid] = maximums[tid + size];
-      max_ms_local[tid] = max_ms_local[tid + size];
-    }
-    __syncthreads();
-  }
-
-  if (tid == 0) {
-    temp_maximums[blockIdx.x] = max_ms_local[0];
-    temp_indices[blockIdx.x] = maximums[0];
-    *m = max_ms_local[0];
-  }
-}
-
-__host__ void BEST_M_HOST(int *dev_m, int N, double *dev_S, int *dev_ind,
-                          double *dev_temp_maximums, int *dev_temp_indices) {
-
-  int numblocks = (N - 1 + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
-
-  // printf("Kernels %d %d\n", numblocks, LINEAR_BLOCKSIZE);
-  BEST_M_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(
-      dev_m, N, dev_S, dev_ind, dev_temp_indices, dev_temp_maximums, 1, N - 2);
-  if (numblocks > 1) {
-    BEST_M_PARALLEL<<<1, LINEAR_BLOCKSIZE>>>(dev_m, N, dev_S, dev_ind,
-                                             dev_temp_indices,
-                                             dev_temp_maximums, 0, numblocks);
-  }
-}
-
-// TODO
-__global__ void BEST_M(int *m, int N, double *S, int *ind) {
-  *m = 0;
-  int k;
-  double max_ = fabs(S[INDEX(*m, ind[*m], N, N)]), temp;
-  for (k = 1; k < N - 1; k++) {
-    temp = fabs(S[INDEX(k, ind[k], N, N)]);
-    if (temp > max_) {
-      *m = k;
-      max_ = temp;
-    }
-  }
 }
 
 __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
@@ -391,162 +209,6 @@ __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
 
     odd_iter = !odd_iter;
   }
-}
-__global__ void GET_S_C(int *k, int *l, int *m, double *c, double *s, double *t,
-                        int N, int *ind, double *S, double *e) {
-  *k = *m;
-  *l = ind[*m];
-  double p = S[INDEX(*k, *l, N, N)];
-  double y = (e[*l] - e[*k]) / 2;
-  double d = fabs(y) + sqrt(p * p + y * y);
-  double r = sqrt(p * p + d * d);
-
-  *c = d / r;
-  *s = p / r;
-  *t = p * p / d;
-
-  if (y < 0) {
-    *s = -(*s);
-    *t = -(*t);
-  }
-
-  S[INDEX(*k, *l, N, N)] = 0.0;
-}
-
-__global__ void UPDATE_COMBINED(int *k, int *l, double *t, double *e,
-                                bool *changed, int *state) {
-  UPDATE(*k, -1 * (*t), e, changed, state);
-  UPDATE(*l, *t, e, changed, state);
-}
-
-__global__ void ROTATE_MULTIPLE1(int *k, int *l, double *c, double *s,
-                                 double *S, int N) {
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-  if (i < *k) {
-    ROTATE(i, *k, i, *l, *c, *s, S, N);
-  }
-}
-
-__global__ void ROTATE_MULTIPLE2(int *k, int *l, double *c, double *s,
-                                 double *S, int N) {
-  int i = blockIdx.x * blockDim.x + threadIdx.x + (*k) + 1;
-
-  if (i < *l) {
-    ROTATE(*k, i, i, *l, *c, *s, S, N);
-  }
-}
-
-__global__ void ROTATE_MULTIPLE3(int *k, int *l, double *c, double *s,
-                                 double *S, int N) {
-  int i = blockIdx.x * blockDim.x + threadIdx.x + (*l) + 1;
-
-  if (i < N) {
-    ROTATE(*k, i, *l, i, *c, *s, S, N);
-  }
-}
-
-__global__ void UPDATE_E(int N, double *E, int *k, int *l, double *c,
-                         double *s) {
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
-  double Eik, Eil;
-
-  if (i < N) {
-    Eik = E[INDEX(i, *k, N, N)];
-    Eil = E[INDEX(i, *l, N, N)];
-    E[INDEX(i, *k, N, N)] = (*c) * Eik - (*s) * Eil;
-    E[INDEX(i, *l, N, N)] = (*s) * Eik + (*c) * Eil;
-  }
-}
-
-__global__ void MAXIND_PARALLEL(int *k_pointer, int N, double *S, int *ind,
-                                int *temp_indices, double *temp_maximums,
-                                int problem_size) {
-  // int m = k + 1, i;
-  // double max_ = fabs(S[INDEX(k, m, N, N)]), temp;
-  // for (i = k + 2; i < N; i++) {
-  //   temp = fabs(S[INDEX(k, i, N, N)]);
-  //   if (temp > max_) {
-  //     m = i;
-  //     max_ = temp;
-  //   }
-  // }
-  // *result = m;
-  int k = *k_pointer;
-  int num_elements = N - k - 2;
-  int offset = k + 2;
-
-  if (problem_size != -1) {
-    num_elements = problem_size;
-    offset = 0;
-  }
-
-  int tid = threadIdx.x;
-  int gid = tid + blockIdx.x * blockDim.x;
-  int stride = blockDim.x * gridDim.x;
-
-  int m = k + 1;
-  double max_ = fabs(S[INDEX(k, m, N, N)]), temp;
-  int i, i_off;
-
-  for (i = gid; i < num_elements; i += stride) {
-
-    i_off = i + offset;
-    temp = fabs(S[INDEX(k, i_off, N, N)]);
-    if (temp > max_) {
-      m = i_off;
-      max_ = temp;
-    }
-  }
-
-  __shared__ int m_shared[LINEAR_BLOCKSIZE];
-  __shared__ double max_shared[LINEAR_BLOCKSIZE];
-
-  m_shared[tid] = m;
-  max_shared[tid] = max_;
-
-  __syncthreads();
-  for (int size = LINEAR_BLOCKSIZE / 2; size > 0; size /= 2) {
-    if (tid < size && max_shared[tid] < max_shared[tid + size]) {
-      max_shared[tid] = max_shared[tid + size];
-      m_shared[tid] = m_shared[tid + size];
-    }
-    __syncthreads();
-  }
-
-  if (tid == 0) {
-    temp_maximums[blockIdx.x] = m_shared[0];
-    temp_indices[blockIdx.x] = max_shared[0];
-    ind[k] = m_shared[0];
-  }
-}
-
-__host__ void UPDATE_IND_PARALLEL(int *dev_k, int *dev_l, int *dev_ind, int N,
-                                  double *dev_S, double *dev_temp_maximums,
-                                  int *dev_temp_indices) {
-  int numblocks = (N + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
-
-  // printf("Kernels %d %d\n", numblocks, LINEAR_BLOCKSIZE);
-  MAXIND_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(
-      dev_k, N, dev_S, dev_ind, dev_temp_indices, dev_temp_maximums, -1);
-  if (numblocks > 1) {
-    MAXIND_PARALLEL<<<1, LINEAR_BLOCKSIZE>>>(dev_k, N, dev_S, dev_ind,
-                                             dev_temp_indices,
-                                             dev_temp_maximums, numblocks);
-  }
-
-  MAXIND_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(
-      dev_l, N, dev_S, dev_ind, dev_temp_indices, dev_temp_maximums, -1);
-  if (numblocks > 1) {
-    MAXIND_PARALLEL<<<1, LINEAR_BLOCKSIZE>>>(dev_l, N, dev_S, dev_ind,
-                                             dev_temp_indices,
-                                             dev_temp_maximums, numblocks);
-  }
-}
-
-__global__ void UPDATE_IND(int *k, int *l, int *ind, int N, double *S) {
-  MAXIND(*k, N, S, &ind[*k]);
-  MAXIND(*l, N, S, &ind[*l]);
 }
 
 __global__ void TRANSPOSE(double *M, int m, int n, double *M_T) {
@@ -622,8 +284,8 @@ __global__ void MULTIPLY_SIGMA_INV(int m, int n, double *M, double *V,
   }
 }
 
-void GET_U(int m, int n, double *dev_M, double *dev_V, double *dev_SIGMA_INV,
-           double *dev_U) {
+__host__ void GET_U(int m, int n, double *dev_M, double *dev_V,
+                    double *dev_SIGMA_INV, double *dev_U) {
   dim3 dimBlock(SQUARE_BLOCKSIZE, SQUARE_BLOCKSIZE);
   dim3 dimGrid((m + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE,
                (m + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE);
@@ -654,44 +316,6 @@ __global__ void GET_W(int k_retended, int n, double *W, double *E) {
   if (i < n * k_retended) {
     W[i] = E[INDEX(i / k_retended, i % k_retended, n, n)];
   }
-}
-
-__global__ void testDev(double *U, double *V_T, double *SIGMA, double *M, int m,
-                        int n, double *UV, double *new_M) {
-  for (int i = 0; i < m; i++) {
-    for (int j = 0; j < n; j++) {
-      UV[INDEX(i, j, m, n)] = U[INDEX(i, j, m, m)] * SIGMA[j];
-    }
-  }
-
-  double max_error = 0;
-
-  for (int i = 0; i < m; i++) {
-    for (int j = 0; j < n; j++) {
-      double sum = 0;
-      for (int k = 0; k < n; k++) {
-        sum += UV[INDEX(i, k, m, n)] * V_T[INDEX(k, j, n, n)];
-      }
-      new_M[INDEX(i, j, m, n)] = sum;
-      // printf("%f\n",M[INDEX(i, j, m, n)] - sum);
-      if (fabs(M[INDEX(i, j, m, n)] - sum) > max_error) {
-        max_error = fabs(M[INDEX(i, j, m, n)] - sum);
-      }
-    }
-  }
-
-  printf("Max error = %f", max_error);
-}
-
-void test(double *U, double *SIGMA, double *V_T, double *M, int m, int n) {
-  double *temp, *new_M;
-  cudaMalloc(&temp, sizeof(double) * m * n);
-  cudaMalloc(&new_M, sizeof(double) * m * n);
-  testDev<<<1, 1>>>(U, V_T, SIGMA, M, m, n, temp, new_M);
-  // printMat<<<1, 1>>>(new_M, m, n);
-  // printMat<<<1, 1>>>(M, m, n);
-  cudaFree(temp);
-  cudaFree(new_M);
 }
 
 void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
@@ -731,16 +355,12 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   bool *converged;
   cudaMalloc(&converged, sizeof(bool));
-  // numblocks = (((n + 1) / 2) + BLOCKSIZE - 1) / BLOCKSIZE;
-  // printf("num %d\n", numblocks);
+
   ODD_EVEN_SORT<<<1, LINEAR_BLOCKSIZE>>>(dev_e, dev_indices, n, converged);
   cudaFree(converged);
 
   numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
   ARRANGE<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_indices, dev_E, dev_new_E, n, n);
-
-  // printVec<<<1, 1>>>(dev_e, n);
-  // printVec<<<1, 1>>>(dev_indices, n);
 
   cudaFree(dev_indices);
 
@@ -784,8 +404,6 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   dimGrid = dim3((*K + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE,
                  (m + SQUARE_BLOCKSIZE - 1) / SQUARE_BLOCKSIZE);
   MATMUL2<<<dimGrid, dimBlock>>>(m, n, *K, dev_M, dev_W, dev_D_HAT);
-
-  // test(dev_U, dev_SIGMA, dev_V_T, dev_M, m, n);
 
   cudaFree(dev_W);
   cudaFree(dev_M);
