@@ -17,9 +17,12 @@ __host__ int inline INDEX_HOST(int i, int j, int m, int n) { return i * n + j; }
 __host__ int maxind(int k, double *S, int N) {
   int m = k + 1, i;
 
+  double max_ = fabs(S[INDEX_HOST(k, m, N, N)]), temp;
   for (i = k + 2; i < N; i++) {
-    if (fabs(S[INDEX_HOST(k, i, N, N)]) > fabs(S[INDEX_HOST(k, m, N, N)])) {
+    temp = fabs(S[INDEX_HOST(k, i, N, N)]);
+    if (temp > max_) {
       m = i;
+      max_ = temp;
     }
   }
 
@@ -68,7 +71,7 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
   cudaDeviceSynchronize();
 
   int i, j, m, k, l;
-  double p, y, d, r, c, s, t;
+  double p, y, d, r, c, s, t, max_, temp;
 
   for (i = 0; i < N; i++) {
     for (j = 0; j < N; j++) {
@@ -90,10 +93,12 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
     count++;
     m = 0;
 
+    max_ = fabs(S[INDEX_HOST(m, ind[m], N, N)]);
     for (k = 1; k < N - 1; k++) {
-      if (fabs(S[INDEX_HOST(k, ind[k], N, N)]) >
-          fabs(S[INDEX_HOST(m, ind[m], N, N)])) {
+      temp = fabs(S[INDEX_HOST(k, ind[k], N, N)]);
+      if (temp > max_) {
         m = k;
+        max_ = temp;
       }
     }
 
