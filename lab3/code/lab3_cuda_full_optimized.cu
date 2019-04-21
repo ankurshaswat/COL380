@@ -101,11 +101,29 @@ __device__ void ROTATE(int k, int l, int i, int j) {
   S[INDEX(i, j, N, N)] = (*s) * Skl + (*c) * Sij;
 }
 
+__global__ void INIT0(double *S_in, double *E_in, double *e_in, double *c_in,
+                      double *s_in, double *temp_maximums_in, bool *changed_in,
+                      int *ind_in, int *state_in, int N_in,
+                      int *temp_indices_in) {
+  S = S_in;
+  E = E_in;
+  e = e_in;
+  c = c_in;
+  s = s_in;
+  temp_maximums = temp_maximums_in;
+  changed = changed_in;
+  ind = ind_in;
+  state = state_in;
+  N = N_in;
+  printf("%f %d %d\n", S[0], N, N_in);
+  temp_indices = temp_indices_in;
+}
+
 __global__ void INIT1() {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (i == 0) {
-    printf("%f\n", S[0]);
+    printf("%f %d\n", S[0], N);
   }
 
   if (i < N * N) {
@@ -368,17 +386,19 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   cudaMalloc(&tmp_temp_maximums, sizeof(double) * numblocks);
   cudaMalloc(&tmp_temp_indices, sizeof(int) * numblocks);
 
-  cudaMemcpyToSymbol("state", &tmp_state, sizeof(void *));
-  cudaMemcpyToSymbol("ind", &tmp_ind, sizeof(void *));
-  cudaMemcpyToSymbol("changed", &tmp_changed, sizeof(void *));
-  cudaMemcpyToSymbol("c", &tmp_c, sizeof(void *));
-  cudaMemcpyToSymbol("s", &tmp_s, sizeof(void *));
-  cudaMemcpyToSymbol("temp_maximums", &tmp_temp_maximums, sizeof(void *));
-  cudaMemcpyToSymbol("temp_indices", &tmp_temp_indices, sizeof(void *));
-  cudaMemcpyToSymbol("S", &dev_S, sizeof(void *));
-  cudaMemcpyToSymbol("E", &dev_E, sizeof(void *));
-  cudaMemcpyToSymbol("e", &dev_e, sizeof(void *));
-  cudaMemcpyToSymbol("N", &n, sizeof(int));
+  INIT0<<<1, 1>>>(dev_S, dev_E, dev_e, tmp_c, tmp_s, tmp_temp_maximums,
+                  tmp_changed, tmp_ind, tmp_state, n, tmp_temp_indices);
+  // cudaMemcpyToSymbol("state", &tmp_state, sizeof(void *));
+  // cudaMemcpyToSymbol("ind", &tmp_ind, sizeof(void *));
+  // cudaMemcpyToSymbol("changed", &tmp_changed, sizeof(void *));
+  // cudaMemcpyToSymbol("c", &tmp_c, sizeof(void *));
+  // cudaMemcpyToSymbol("s", &tmp_s, sizeof(void *));
+  // cudaMemcpyToSymbol("temp_maximums", &tmp_temp_maximums, sizeof(void *));
+  // cudaMemcpyToSymbol("temp_indices", &tmp_temp_indices, sizeof(void *));
+  // cudaMemcpyToSymbol("S", &dev_S, sizeof(void *));
+  // cudaMemcpyToSymbol("E", &dev_E, sizeof(void *));
+  // cudaMemcpyToSymbol("e", &dev_e, sizeof(void *));
+  // cudaMemcpyToSymbol("N", &n, sizeof(int));
 
   numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
 
@@ -392,7 +412,7 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   int checkpoint = max(1, (n * n) / 100);
   // printf("%d",checkpoint);
   while (state_local > 0) {
-    break;
+    // break;
     count++;
 
     // BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
