@@ -7,6 +7,7 @@
 __device__ double *S, *E, *e, *c, *s, *temp_maximums;
 __device__ bool *changed;
 __device__ int *ind, *state, N, *temp_indices;
+int N_device;
 
 __device__ inline int INDEX(int i1, int i2, int l1, int l2) {
   return i1 * l2 + i2;
@@ -103,6 +104,10 @@ __device__ void ROTATE(int k, int l, int i, int j) {
 __global__ void INIT1() {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
 
+  if (i == 0) {
+    printf("%f\n", S[0]);
+  }
+
   if (i < N * N) {
     E[i] = ((i / N) == (i % N));
   }
@@ -169,10 +174,10 @@ __global__ void BEST_M_PARALLEL(int *m, int offset, int num_elements) {
 
 __host__ void BEST_M_HOST(int *dev_m) {
 
-  int numblocks = (N - 1 + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+  int numblocks = (N_device - 1 + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
 
   // printf("Kernels %d %d\n", numblocks, LINEAR_BLOCKSIZE);
-  BEST_M_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_m, 1, N - 2);
+  BEST_M_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_m, 1, N_device - 2);
   if (numblocks > 1) {
     BEST_M_PARALLEL<<<1, LINEAR_BLOCKSIZE>>>(dev_m, 0, numblocks);
   }
@@ -234,6 +239,7 @@ __global__ void ROTATE_MULTIPLE2(int *k, int *l) {
 }
 
 __global__ void ROTATE_MULTIPLE3(int *k, int *l) {
+
   int i = blockIdx.x * blockDim.x + threadIdx.x + (*l) + 1;
 
   if (i < N) {
@@ -314,7 +320,8 @@ __global__ void MAXIND_PARALLEL(int *k_pointer, int problem_size) {
 }
 
 __host__ void UPDATE_IND_PARALLEL(int *dev_k, int *dev_l) {
-  int numblocks = (N + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
+
+  int numblocks = (N_device + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
 
   // printf("Kernels %d %d\n", numblocks, LINEAR_BLOCKSIZE);
   MAXIND_PARALLEL<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_k, -1);
@@ -335,22 +342,43 @@ __global__ void UPDATE_IND(int *k, int *l) {
 
 void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
 
+  N_device = n;
+
   int *dev_m, *dev_k, *dev_l;
   double *dev_t_;
   int state_local = n;
   int numblocks = (n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
 
-  cudaMalloc(&state, sizeof(int));
-  cudaMalloc(&ind, sizeof(int) * n);
-  cudaMalloc(&changed, sizeof(bool) * n);
   cudaMalloc(&dev_m, sizeof(int));
   cudaMalloc(&dev_k, sizeof(int));
   cudaMalloc(&dev_l, sizeof(int));
-  cudaMalloc(&c, sizeof(double));
-  cudaMalloc(&s, sizeof(double));
   cudaMalloc(&dev_t_, sizeof(double));
-  cudaMalloc(&temp_maximums, sizeof(double) * numblocks);
-  cudaMalloc(&temp_indices, sizeof(int) * numblocks);
+
+  int *tmp_state;
+  int *tmp_ind;
+  bool *tmp_changed;
+  double *tmp_c, *tmp_s, *tmp_temp_maximums;
+  int *tmp_temp_indices;
+
+  cudaMalloc(&tmp_state, sizeof(int));
+  cudaMalloc(&tmp_ind, sizeof(int) * n);
+  cudaMalloc(&tmp_changed, sizeof(bool) * n);
+  cudaMalloc(&tmp_c, sizeof(double));
+  cudaMalloc(&tmp_s, sizeof(double));
+  cudaMalloc(&tmp_temp_maximums, sizeof(double) * numblocks);
+  cudaMalloc(&tmp_temp_indices, sizeof(int) * numblocks);
+
+  cudaMemcpyToSymbol("state", &tmp_state, sizeof(void *));
+  cudaMemcpyToSymbol("ind", &tmp_ind, sizeof(void *));
+  cudaMemcpyToSymbol("changed", &tmp_changed, sizeof(void *));
+  cudaMemcpyToSymbol("c", &tmp_c, sizeof(void *));
+  cudaMemcpyToSymbol("s", &tmp_s, sizeof(void *));
+  cudaMemcpyToSymbol("temp_maximums", &tmp_temp_maximums, sizeof(void *));
+  cudaMemcpyToSymbol("temp_indices", &tmp_temp_indices, sizeof(void *));
+  cudaMemcpyToSymbol("S", &dev_S, sizeof(void *));
+  cudaMemcpyToSymbol("E", &dev_E, sizeof(void *));
+  cudaMemcpyToSymbol("e", &dev_e, sizeof(void *));
+  cudaMemcpyToSymbol("N", &n, sizeof(int));
 
   numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
 
@@ -359,12 +387,12 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
 
   numblocks = (n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
   INIT3<<<numblocks, LINEAR_BLOCKSIZE>>>();
-
   int count = 0;
 
   int checkpoint = max(1, (n * n) / 100);
   // printf("%d",checkpoint);
   while (state_local > 0) {
+    break;
     count++;
 
     // BEST_M<<<1, 1>>>(dev_m, n, dev_S, dev_ind);
@@ -381,7 +409,7 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
 
     if (count % checkpoint == 0) {
       // printf("hey\n");
-      cudaMemcpy(&state_local, state, sizeof(int), cudaMemcpyDeviceToHost);
+      cudaMemcpy(&state_local, tmp_state, sizeof(int), cudaMemcpyDeviceToHost);
       cudaDeviceSynchronize();
       printf("Checkpoint= %d\tState= %d\tIterNumber= %d\n", count / checkpoint,
              state_local, count);
@@ -389,18 +417,17 @@ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
   }
   // printf("%d %d\n", state, count);
 
-  // cudaFree(state);
-  // cudaFree(ind);
-  // cudaFree(changed);
-  // cudaFree(dev_m);
-  // cudaFree(dev_k);
-  // cudaFree(dev_l);
-  // cudaFree(c);
-  // cudaFree(s);
-  // cudaFree(dev_t_);
-
-  // cudaFree(temp_maximums);
-  // cudaFree(temp_indices);
+  cudaFree(tmp_state);
+  cudaFree(tmp_ind);
+  cudaFree(tmp_changed);
+  cudaFree(dev_m);
+  cudaFree(dev_k);
+  cudaFree(dev_l);
+  cudaFree(tmp_c);
+  cudaFree(tmp_s);
+  cudaFree(dev_t_);
+  cudaFree(tmp_temp_maximums);
+  cudaFree(tmp_temp_indices);
 }
 
 __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
