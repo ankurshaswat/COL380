@@ -12,9 +12,13 @@ using namespace std;
 #define TOLERANCE 0.001
 #define JACOBI_UPDATE_TOLERANCE 0.001
 
+bool *changed;
+int *ind, *state, N;
+double *S, *E, *e, c, s;
+
 __host__ int inline INDEX_HOST(int i, int j, int m, int n) { return i * n + j; }
 
-__host__ int maxind(int k, double *S, int N) {
+__host__ int maxind(int k) {
   int m = k + 1, i;
 
   double max_ = fabs(S[INDEX_HOST(k, m, N, N)]), temp;
@@ -29,7 +33,7 @@ __host__ int maxind(int k, double *S, int N) {
   return m;
 }
 
-__host__ void update(int k, double t, double *e, bool *changed, int *state) {
+__host__ void update(int k, double t) {
   double ek_prev = e[k];
   e[k] = ek_prev + t;
 
@@ -45,33 +49,34 @@ __host__ void update(int k, double t, double *e, bool *changed, int *state) {
   }
 }
 
-__host__ void rotate(int k, int l, int i, int j, double c, double s, double *S,
-                     int N) {
+__host__ void rotate(int k, int l, int i, int j) {
   double Skl = S[INDEX_HOST(k, l, N, N)], Sij = S[INDEX_HOST(i, j, N, N)];
   S[INDEX_HOST(k, l, N, N)] = c * Skl - s * Sij;
   S[INDEX_HOST(i, j, N, N)] = s * Skl + c * Sij;
 }
 
-__host__ void update_e(int k, int l, int i, int j, double c, double s,
-                       double *E, int N) {
+__host__ void update_e(int k, int l, int i) {
   double Eik = E[INDEX_HOST(i, k, N, N)], Eil = E[INDEX_HOST(i, l, N, N)];
   E[INDEX_HOST(i, k, N, N)] = c * Eik - s * Eil;
   E[INDEX_HOST(i, l, N, N)] = s * Eik + c * Eil;
 }
 
-__host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
+__host__ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
 
-  double *E = (double *)malloc(sizeof(double) * N * N);
-  double *e = (double *)malloc(sizeof(double) * N);
-  int *ind = (int *)malloc(sizeof(int) * N);
-  bool *changed = (bool *)malloc(sizeof(bool) * N);
-  double *S = (double *)malloc(sizeof(double) * N * N);
+  N = n;
+
+  E = (double *)malloc(sizeof(double) * N * N);
+  e = (double *)malloc(sizeof(double) * N);
+  ind = (int *)malloc(sizeof(int) * N);
+  changed = (bool *)malloc(sizeof(bool) * N);
+  S = (double *)malloc(sizeof(double) * N * N);
+  state = (int *)malloc(sizeof(int));
 
   cudaMemcpy(S, dev_S, sizeof(double) * N * N, cudaMemcpyDeviceToHost);
   cudaDeviceSynchronize();
 
   int i, j, m, k, l;
-  double p, y, d, r, c, s, t, max_, temp;
+  double p, y, d, r, t, max_, temp;
 
   for (i = 0; i < N; i++) {
     for (j = 0; j < N; j++) {
@@ -80,16 +85,16 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
     E[INDEX_HOST(i, i, N, N)] = 1;
   }
 
-  int state = N;
+  *state = N;
   int count = 0;
 
   for (k = 0; k < N; k++) {
-    ind[k] = maxind(k, S, N);
+    ind[k] = maxind(k);
     e[k] = S[INDEX_HOST(k, k, N, N)];
     changed[k] = true;
   }
 
-  while (state != 0) {
+  while (*state != 0) {
     count++;
     m = 0;
 
@@ -118,28 +123,28 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
     }
 
     S[INDEX_HOST(k, l, N, N)] = 0.0;
-    update(k, -t, e, changed, &state);
-    update(l, t, e, changed, &state);
+    update(k, -t);
+    update(l, t);
 
     for (i = 0; i < k; i++) {
-      rotate(i, k, i, l, c, s, S, N);
+      rotate(i, k, i, l);
     }
     for (i = k + 1; i < l; i++) {
-      rotate(k, i, i, l, c, s, S, N);
+      rotate(k, i, i, l);
     }
     for (i = l + 1; i < N; i++) {
-      rotate(k, i, l, i, c, s, S, N);
+      rotate(k, i, l, i);
     }
 
     for (i = 0; i < N; i++) {
-      update_e(k, l, i, i, c, s, E, N);
+      update_e(k, l, i);
     }
 
-    ind[k] = maxind(k, S, N);
-    ind[l] = maxind(l, S, N);
+    ind[k] = maxind(k);
+    ind[l] = maxind(l);
 
     if (count % 1000 == 0) {
-      printf("%d %d\n", state, count);
+      printf("%d %d\n", *state, count);
     }
   }
 
@@ -149,6 +154,7 @@ __host__ void JACOBI(int N, double *dev_E, double *dev_e, double *dev_S) {
   free(changed);
   free(ind);
   free(S);
+  free(state);
 
   cudaDeviceSynchronize();
 
