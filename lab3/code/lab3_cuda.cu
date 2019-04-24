@@ -482,7 +482,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   // printMatHost(*D_HAT, m, *K);
 
-  // cudaFree(dev_D_HAT);
+  cudaFree(dev_D_HAT);
 
   cudaDeviceSynchronize();
 
