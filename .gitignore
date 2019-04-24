@@ -40,3 +40,5 @@ lab3/code/pca
 lab3/testcases/*.txt
 
 env/
+lab4/testcases/*.txt
+lab4/code/ppm

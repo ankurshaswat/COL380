@@ -19,6 +19,16 @@ double *S, *E, *e, c, s;
 __device__ inline int INDEX(int i1, int i2, int l1, int l2) {
   return i1 * l2 + i2;
 }
+__host__ int inline INDEX_HOST(int i, int j, int m, int n) { return i * n + j; }
+
+__global__ void printVec(double *vec, int n1) {
+  printf("\n");
+  for (int i = 0; i < n1; i++) {
+    printf("%f ", vec[i]);
+  }
+  printf("\n");
+  printf("\n");
+}
 
 __global__ void printMat(double *mat, int n1, int n2) {
   printf("\n");
@@ -31,7 +41,16 @@ __global__ void printMat(double *mat, int n1, int n2) {
   printf("\n");
 }
 
-__host__ int inline INDEX_HOST(int i, int j, int m, int n) { return i * n + j; }
+__host__ void printMatHost(double *mat, int n1, int n2) {
+  printf("\n");
+  for (int i = 0; i < n1; i++) {
+    for (int j = 0; j < n2; j++) {
+      printf("%f ", mat[INDEX_HOST(i, j, n1, n2)]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+}
 
 __host__ int maxind(int k) {
   int m = k + 1, i;
@@ -158,14 +177,15 @@ __host__ void JACOBI(int n, double *dev_E, double *dev_e, double *dev_S) {
     ind[k] = maxind(k);
     ind[l] = maxind(l);
 
-    if (count % 1000 == 0) {
-      printf("%d %d\n", *state, count);
-    }
+    // if (count % 1000 == 0) {
+    //   printf("%d %d\n", *state, count);
+    // }
   }
 
   cudaMemcpy(dev_E, E, sizeof(double) * N * N, cudaMemcpyHostToDevice);
   cudaMemcpy(dev_e, e, sizeof(double) * N, cudaMemcpyHostToDevice);
 
+  // printVec<<<1, 1>>>(dev_e, N);
   free(changed);
   free(ind);
   free(S);
@@ -182,7 +202,14 @@ __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
   int index_global = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
-  *converged = false;
+  // *converged = false;
+
+  __shared__ bool odd_converged, even_converged;
+  if (index_global == 0) {
+    odd_converged = false;
+    even_converged = false;
+  }
+
   bool odd_iter = false;
   double temp;
   int to_see, to_see_next, index_local, i, temp_int;
@@ -191,10 +218,15 @@ __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
     indices[i] = i;
   }
 
-  while (!(*converged)) {
+  while (!(odd_converged && even_converged)) {
     __syncthreads();
-    *converged = true;
-    for (index_local = index_global; index_local < n / 2;
+    // *converged = true;
+    if (odd_iter) {
+      odd_converged = true;
+    } else {
+      even_converged = true;
+    }
+    for (index_local = index_global; index_local < 1 + n / 2;
          index_local += stride) {
       if (odd_iter && 2 * index_local + 2 < n) {
         to_see = 2 * index_local + 1;
@@ -209,7 +241,7 @@ __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
           indices[to_see_next] = indices[to_see];
           indices[to_see] = temp_int;
 
-          *converged = false;
+          odd_converged = false;
         }
       } else if (!odd_iter && 2 * index_local + 1 < n) {
         to_see = 2 * index_local;
@@ -224,7 +256,7 @@ __global__ void ODD_EVEN_SORT(double *arr, int *indices, int n,
           indices[to_see_next] = indices[to_see];
           indices[to_see] = temp_int;
 
-          *converged = false;
+          even_converged = false;
         }
       }
     }
@@ -380,6 +412,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   ODD_EVEN_SORT<<<1, LINEAR_BLOCKSIZE>>>(dev_e, dev_indices, n, converged);
   cudaFree(converged);
+  // printVec<<<1, 1>>>(dev_e, N);
 
   numblocks = (n * n + LINEAR_BLOCKSIZE - 1) / LINEAR_BLOCKSIZE;
   ARRANGE<<<numblocks, LINEAR_BLOCKSIZE>>>(dev_indices, dev_E, dev_new_E, n, n);
@@ -408,13 +441,13 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
 
   cudaMalloc(&dev_k, sizeof(int));
   GET_RETENTION<<<1, 1>>>(dev_k, n, dev_e, dev_eigen_total, retention);
-
+  // printVec<<<1, 1>>>(dev_eigen_total, 1);
   cudaFree(dev_eigen_total);
   cudaFree(dev_e);
 
   cudaMemcpy(K, dev_k, sizeof(int), cudaMemcpyDeviceToHost);
   cudaFree(dev_k);
-
+  // printf("K %d\n", *K);
   cudaMalloc(&dev_W, sizeof(double) * n * (*K));
   cudaMalloc(&dev_D_HAT, sizeof(double) * m * (*K));
 
@@ -434,6 +467,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaMemcpy(*U, dev_U, sizeof(double) * m * m, cudaMemcpyDeviceToHost);
   cudaFree(dev_U);
 
+  // printVec<<<1,1>>>(dev_SIGMA,n);
   *SIGMA = (double *)malloc(sizeof(double) * n);
   cudaMemcpy(*SIGMA, dev_SIGMA, sizeof(double) * n, cudaMemcpyDeviceToHost);
   cudaFree(dev_SIGMA);
@@ -446,9 +480,9 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaMemcpy(*D_HAT, dev_D_HAT, sizeof(double) * m * (*K),
              cudaMemcpyDeviceToHost);
 
-  printMat<<<1, 1>>>(dev_D_HAT, m, *K);
+  // printMatHost(*D_HAT, m, *K);
 
-  cudaFree(dev_D_HAT);
+  // cudaFree(dev_D_HAT);
 
   cudaDeviceSynchronize();
 

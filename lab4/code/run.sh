@@ -1,2 +1,2 @@
-mpirun -np 4 ppm testcase/testcase_10000_10
+mpirun -np 6 ppm $1
 

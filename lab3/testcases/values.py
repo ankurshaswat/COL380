@@ -14,28 +14,40 @@ mat = np.asarray(mat)
 
 mat = mat.reshape((m, n))
 
-print('M')
-print(mat)
+# print('M')
+# print(mat)
 
 mat_T = mat.T
 
-print('M Transpose')
-print(mat_T)
+# print('M Transpose')
+# print(mat_T)
 
 S = np.dot(mat_T, mat)
 
-print('S')
-print(S)
+# print('S')
+# print(S)
 
 w, v = np.linalg.eig(S)
 
 print('Eigen Values')
-print(w)
+print(sorted(list(w),reverse=True))
+l_w = sorted(list(w),reverse=True)
+sum_ = np.sum(w)
+# print(sum_)
+k = 0
+max_retention = 90.0
+retention = 0
+for i in range(len(l_w)):
+    k += 1
+    retention += l_w[i]
+    if(100.0*retention/sum_ >= max_retention):
+        break
+# print(retention)
+# print(k)
+# print(np.sum(w))
 
-print(np.sum(w))
-
-print('Eigen Vectors')
-print(v)
+# print('Eigen Vectors')
+# print(v)
 
 smat_inv = np.zeros((n, m), dtype=float)
 smat_inv[:n, :n] = np.diag(1/np.sqrt(w))
@@ -47,23 +59,23 @@ u_reg = np.dot(np.dot(mat,v),smat_inv)
 # np.set_printoptions(threshold=sys.maxsize)
 
 # print('U by mult')
-print(u_reg)
+# print(u_reg)
 # print('M reg')
 m_reg = np.dot(np.dot(u_reg,smat),v.T)
-print('Max error in regeneration = ',np.max(np.absolute(np.array(mat)-np.array(m_reg))))
+# print('Max error in regeneration = ',np.max(np.absolute(np.array(mat)-np.array(m_reg))))
 
 u, s, vh = np.linalg.svd(mat)
-print('U')
+# print('U')
 # print(u)
 
-print('SIGMA')
-print(s)
-print('SIGMA INV')
-print(1/s)
+# print('SIGMA')
+# print(s)
+# print('SIGMA INV')
+# print(1/s)
 
-print('VT')
-print(vh)
+# print('VT')
+# print(vh)
 
-pca = PCA(n_components=2)
+pca = PCA(n_components=k)
 y = pca.fit_transform(mat)
-print(y)
+# print(y)

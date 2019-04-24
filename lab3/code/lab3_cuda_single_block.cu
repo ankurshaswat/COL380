@@ -815,7 +815,7 @@ void SVD_and_PCA(int m, int n, double *D, double **U, double **SIGMA,
   cudaMemcpy(*D_HAT, dev_D_HAT, sizeof(double) * m * (*K),
              cudaMemcpyDeviceToHost);
 
-  // printMat<<<1, 1>>>(dev_D_HAT, m, *K);
+  printMat<<<1, 1>>>(dev_D_HAT, m, *K);
 
   cudaFree(dev_D_HAT);
 
