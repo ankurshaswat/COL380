@@ -135,8 +135,6 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 							   int **match_counts, int **matches)
 {
 	int pattern_num, m, p, ceil_m_by_2, pp_len, k2, half_pp_len, k;
-	/*START MPI */
-	MPI_Init(NULL, NULL);
 	/*DETERMINE RANK OF THIS PROCESSOR*/
 	MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 	/*DETERMINE TOTAL NUMBER OF PROCESSORS*/
@@ -280,8 +278,8 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 				int i = j % p;
 				MATCH[j] = C[INDEX(i, l, half_pp_len, k2)];
 			}
-			MPI_Allgather(&MATCH[start], end - start, MPI_INT, MATCH, end - start, MPI_INT, MPI_COMM_WORLD);
-			// MPI_Gather(&MATCH[start], end - start, MPI_INT, MATCH, end - start, MPI_INT, 0, MPI_COMM_WORLD);
+			// MPI_Allgather(&MATCH[start], end - start, MPI_INT, MATCH, end - start, MPI_INT, MPI_COMM_WORLD);
+			MPI_Gather(&MATCH[start], end - start, MPI_INT, MATCH, end - start, MPI_INT, 0, MPI_COMM_WORLD);
 		}
 
 		if (my_rank == 0)
@@ -293,7 +291,7 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 				if (MATCH[i])
 				{
 					// 	printed = 1;
-					// printf("%d ", i);
+					printf("%d ", i);
 
 					(*matches)[saved] = i;
 					if (matches_size == saved)
@@ -306,15 +304,13 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 			}
 			// (*match_counts)[pattern_num] = count;
 			(*match_counts)[pattern_num] = count;
-			printf("Count %d\n",  count);
+			printf("Count %d\n", count);
 			// if (printed)
 			// {
 			// 	printf("\n:%d for iter %d \n", count, pattern_num);
 			// }
 		}
 	}
-
-	MPI_Finalize(); /* EXIT MPI */
 
 	free(S);
 	free(C);
