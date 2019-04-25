@@ -1,63 +1,64 @@
-# col380_lab4_suite
-Problem Statement: Implement Parallel Periodic Pattern Matching using MPI
+# col380_lab3_suite
+Problem Statement: Implement Principal Component Analysis with Singular Vector Decomposition in CUDA
 
 ## Directories and files
-`testcase/`: contains python script `gen_testcase.py` for sample testcase generation  
-`lab4_io.h` and `lab4_io.c`: functions to read text & pattern from file and check the correctness of the result  
-`main_mpi.c`: function `main()`  
-`lab4_mpi.h`: header file for the functions to be implemented  
-`lab4_mpi.c`: implement the function in this file  
-Refer to respective files for further details.  
+- `testcase/`: contains python script `gen_testcase.py` for sample testcase generation  
+- `lab3_io.h` and `lab3_io.cu`: functions to read matrix from file and check the correctness of the result. This file also contains a dummy function to check the dimensions of the returned matrix
+- `main_cuda.cu`: function `main()`  
+- `lab3_cuda.h`: header file for the functions to be implemented  
+- `lab3_cuda.cu`: implement the function in this file  
+Refer to respective files for furthur details.  
 **Do not change the directory structure and prototype of functions.**
 
 ## Building and Executing
-If you are using `c`, compile your code as follows:
 ```
-mpicc -lm main_mpi.c lab4_mpi.c lab4_io.c -o ppm
-```
-If you are using `c++`, compile your code as follows:
-```
-mpic++ -lm main_mpi.c lab4_mpi.cpp lab4_io.c -o ppm
+nvcc -lm -std=c++11 main_cuda.cu lab3_cuda.cu lab3_io.cu -o pca
 ```
 #### Command Line Arguments
-The program takes one command line arguments:
-- arg: input filename (consist text and patterns)  
+The program takes two command line arguments:
+- arg1: input filename (consist M, N and D)  
+- arg2: retention (percentage of information to be retained by PCA) 
 
+Note that the retention percentage is integer.  Please refer to `main_cuda.cu` for more details.  
 To run the program:
 ```
-mpirun -np 4 ppm <input filename>
+./pca <input filename> <retention>
 ```
 Example:
 ```
-mpirun -np 4 ppm testcase/testcase_10000_10
+./pca testcase/testcase_1000_1000 90
 ```
 
 ## Generating testcases
-Script `gen_testcase.py` generates testcases as per the parameters and output the generated testcase in file `testcase_<n>_<num_patterns>` in the desired format. You might need to change the values of variables `n` and `num_patterns` in the script. Read the comments in the script for more information.
+Script `gen_testcase.py` generates testcases as per the parameters and output the generated testcase in file `testcase_<M>_<N>` in the desired format. You might need to change the values of variables `M` and `N` in the script. Read the comments in the script for more information.
 ```
 python3 gen_testcase.py
 ```
 
 ## Input-Output Specifications
 #### Input dataset specifications
-- n : length of text
-- text : text in which pattern is to be matched
-- num_patterns : #patterns to be matched in the text
-- m_set : lengths of patterns in pattern_set
-- p_set : periods of patterns in pattern_set
-- pattern_set : set of patterns to be matched
+- M : number of rows (samples) in input matrix D
+- N : number of columns (features) in input matrix D
+- D : input matrix, #elements in D is (M * N)
 
-The first line of the input file contains `n` followed by `num_patterns`. The second line contains the `text`. Third and fourth lines contain length of patterns `m_set`, and period of patterns `p_set` respectively. Next `num_patterns` lines contain the patterns to be matched. All the values in one line are space separated.  
+The first line of the input file contains `M` followed by `N`. The second line contains elements of matrix `D`. All the values in one line are space separated.  
 
 #### Output Specification
-Your program should find all the matches of all the patterns in the given text and store the results in the variables given in the program. We will check the correctness by calling the functions from the program. You should compute following:  
-- match_counts : #match of `pattern[i]` in text
-- matches : set of all matches of each `pattern[i]` in text
+Your program should perform SVD and PCA on the given input and store the results in the variables given in the program. We will check the correctness by calling the functions from the program. You should compute following matrices and values:  
+- U : N x N (or M x M, read note in `lab3_cuda.h`) real matrix (to be computed by SVD)
+- SIGMA : N x M (or M x N, read note in `lab3_cuda.h`) diagonal matrix of positive real numbers ( to be computed by SVD). Consists only digonal elements, #elements = N. Hence, you should return a vector of N elements
+- V_T : M x M (or M x M, read note in `lab3_cuda.h`) real matrix (to be computed by SVD)
+- SIGMAm : #rows in SIGMA, same as rows in matrix used for SVD (to be computed)
+- SIGMAn : #columns in SIGMA, same as rows in matrix used for SVD (to be computed)
+- K : number of columns (features) in reduced matrix D_HAT
+- D_HAT : reduced matrix (to be computed by PCA)
 
-Refer to `lab4_mpi.h` for more details. **Your program should not output anything on `stdout`.**  
+Refer to `lab3_cuda.h` for more details. **Your program should not output anything on `stdout`.**
+
+**Important: read note in `lab3_cuda.h` for dimesions of U, SIGMA, V_T and clearifictaion of variables SIGMAm and SIGMAn**
 
 ## Submission Instructions
-- You are supposed to submit only one file named `lab4_mpi.c` or `lab4_mpi.cpp` . Please make sure all the functions you have used are in this file.
+- You are supposed to submit only one file named `lab3_cuda.cu`. Please make sure all the functions you have used are in this file.
 - Do not submit other files
 - Your code should build and execute as per the instructions given above. Please make sure that your code doesn't need any Makefile.
 - Your program should not output anything in `stdout`.
