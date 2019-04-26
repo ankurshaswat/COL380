@@ -11,8 +11,13 @@ Refer to respective files for further details.
 **Do not change the directory structure and prototype of functions.**
 
 ## Building and Executing
+If you are using `c`, compile your code as follows:
 ```
 mpicc -lm main_mpi.c lab4_mpi.c lab4_io.c -o ppm
+```
+If you are using `c++`, compile your code as follows:
+```
+mpic++ -lm main_mpi.c lab4_mpi.cpp lab4_io.c -o ppm
 ```
 #### Command Line Arguments
 The program takes one command line arguments:
@@ -20,11 +25,11 @@ The program takes one command line arguments:
 
 To run the program:
 ```
-mpirun -np 4 ppm <input filename>
+mpirun -np 4 ./ppm <input filename>
 ```
 Example:
 ```
-mpirun -np 4 ppm testcase/testcase_10000_10
+mpirun -np 4 ./ppm ./testcase/testcase_10000_10
 ```
 
 ## Generating testcases
@@ -52,7 +57,7 @@ Your program should find all the matches of all the patterns in the given text a
 Refer to `lab4_mpi.h` for more details. **Your program should not output anything on `stdout`.**  
 
 ## Submission Instructions
-- You are supposed to submit only one file named `lab4_mpi.c`. Please make sure all the functions you have used are in this file.
+- You are supposed to submit only one file named `lab4_mpi.c` or `lab4_mpi.cpp` . Please make sure all the functions you have used are in this file.
 - Do not submit other files
 - Your code should build and execute as per the instructions given above. Please make sure that your code doesn't need any Makefile.
 - Your program should not output anything in `stdout`.

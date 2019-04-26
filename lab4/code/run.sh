@@ -1,2 +1,2 @@
-mpirun -np 6 ppm $1
+mpirun -np 6 ./ppm $1
 

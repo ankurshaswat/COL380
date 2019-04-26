@@ -83,7 +83,14 @@ void get_witness_array(int *witness_array, int witness_array_len, char *pattern)
 			}
 		}
 	}
-	MPI_Allgather(&witness_array[start], end - start, MPI_INT, witness_array, end - start, MPI_INT, MPI_COMM_WORLD);
+	if (my_rank == 0)
+	{
+		MPI_Allgather(MPI_IN_PLACE, end - start, MPI_INT, witness_array, end - start, MPI_INT, MPI_COMM_WORLD);
+	}
+	else
+	{
+		MPI_Allgather(&witness_array[start], end - start, MPI_INT, witness_array, end - start, MPI_INT, MPI_COMM_WORLD);
+	}
 }
 
 void np_textanalysis(char *T, int n, char *P, int m, int *witness_array, int ceil_m_by_2, int *MATCH)
@@ -127,7 +134,14 @@ void np_textanalysis(char *T, int n, char *P, int m, int *witness_array, int cei
 			MATCH[i] = 1;
 		}
 	}
-	MPI_Allgather(&MATCH[start * ceil_m_by_2], (end - start) * ceil_m_by_2, MPI_INT, MATCH, (end - start) * ceil_m_by_2, MPI_INT, MPI_COMM_WORLD);
+	if (my_rank == 0)
+	{
+		MPI_Allgather(MPI_IN_PLACE, (end - start) * ceil_m_by_2, MPI_INT, MATCH, (end - start) * ceil_m_by_2, MPI_INT, MPI_COMM_WORLD);
+	}
+	else
+	{
+		MPI_Allgather(&MATCH[start * ceil_m_by_2], (end - start) * ceil_m_by_2, MPI_INT, MATCH, (end - start) * ceil_m_by_2, MPI_INT, MPI_COMM_WORLD);
+	}
 }
 
 void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
@@ -151,7 +165,7 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 
 	potential_positions = malloc(4);
 	*match_counts = malloc(sizeof(int) * num_patterns);
-	*matches = malloc(sizeof(int) * 10);
+	(*matches) = malloc(sizeof(int) * 10);
 	int matches_size = 10;
 	int saved = 0;
 
@@ -228,7 +242,14 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 				}
 			}
 
-			MPI_Allgather(&M[start], end - start, MPI_INT, M, end - start, MPI_INT, MPI_COMM_WORLD);
+			if (my_rank == 0)
+			{
+				MPI_Allgather(MPI_IN_PLACE, end - start, MPI_INT, M, end - start, MPI_INT, MPI_COMM_WORLD);
+			}
+			else
+			{
+				MPI_Allgather(&M[start], end - start, MPI_INT, M, end - start, MPI_INT, MPI_COMM_WORLD);
+			}
 
 			if (C_size < half_pp_len * k2 + size + k2 * size)
 			{
@@ -267,7 +288,15 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 					}
 				}
 			}
-			MPI_Allgather(&C[start * k2], (end - start) * k2, MPI_INT, C, (end - start) * k2, MPI_INT, MPI_COMM_WORLD);
+
+			if (my_rank == 0)
+			{
+				MPI_Allgather(MPI_IN_PLACE, (end - start) * k2, MPI_INT, C, (end - start) * k2, MPI_INT, MPI_COMM_WORLD);
+			}
+			else
+			{
+				MPI_Allgather(&C[start * k2], (end - start) * k2, MPI_INT, C, (end - start) * k2, MPI_INT, MPI_COMM_WORLD);
+			}
 
 			get_my_chunk(0, n - m + 1, &start, &end);
 			for (int j = start; j < end && j < n - m + 1; j++)
@@ -279,7 +308,14 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 				MATCH[j] = C[INDEX(i, l, half_pp_len, k2)];
 			}
 			// MPI_Allgather(&MATCH[start], end - start, MPI_INT, MATCH, end - start, MPI_INT, MPI_COMM_WORLD);
-			MPI_Gather(&MATCH[start], end - start, MPI_INT, MATCH, end - start, MPI_INT, 0, MPI_COMM_WORLD);
+			if (my_rank == 0)
+			{
+				MPI_Gather(MPI_IN_PLACE, end - start, MPI_INT, MATCH, end - start, MPI_INT, 0, MPI_COMM_WORLD);
+			}
+			else
+			{
+				MPI_Gather(&MATCH[start], end - start, MPI_INT, MATCH, end - start, MPI_INT, 0, MPI_COMM_WORLD);
+			}
 		}
 
 		if (my_rank == 0)
@@ -290,27 +326,38 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 			{
 				if (MATCH[i])
 				{
-					// 	printed = 1;
-					printf("%d ", i);
+					(*matches)[saved++] = i;
 
-					(*matches)[saved] = i;
 					if (matches_size == saved)
 					{
-						*matches = realloc(*matches, 2 * matches_size);
-						matches_size *= 2;
+						// printf("%d\n", matches_size);
+						(*matches) = realloc((*matches), sizeof(int) * matches_size * 2);
+						matches_size = 2 * matches_size;
 					}
+
 					count++;
 				}
 			}
-			// (*match_counts)[pattern_num] = count;
 			(*match_counts)[pattern_num] = count;
-			printf("Count %d\n", count);
-			// if (printed)
-			// {
-			// 	printf("\n:%d for iter %d \n", count, pattern_num);
-			// }
 		}
 	}
+
+	// if (my_rank == 0)
+	// {
+	// 	int offset = 0;
+	// 	for (int i = 0; i < num_patterns; i++)
+	// 	{
+	// 		int num = (*match_counts)[i];
+	// 		printf("count %d\n", num);
+
+	// 		for (int j = 0; j < num; j++)
+	// 		{
+	// 			printf("%d ", (*matches)[offset + j]);
+	// 		}
+	// 		offset += num;
+	// 		printf("\n");
+	// 	}
+	// }
 
 	free(S);
 	free(C);
