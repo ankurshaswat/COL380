@@ -83,14 +83,15 @@ void get_witness_array(int *witness_array, int witness_array_len, char *pattern)
 			}
 		}
 	}
-	if (my_rank == 0)
-	{
-		MPI_Allgather(MPI_IN_PLACE, end - start, MPI_INT, witness_array, end - start, MPI_INT, MPI_COMM_WORLD);
-	}
-	else
-	{
-		MPI_Allgather(&witness_array[start], end - start, MPI_INT, witness_array, end - start, MPI_INT, MPI_COMM_WORLD);
-	}
+	// if (my_rank == 0)
+	// {
+
+	MPI_Allgather(MPI_IN_PLACE, end - start, MPI_INT, witness_array, end - start, MPI_INT, MPI_COMM_WORLD);
+	// }
+	// else
+	// {
+	// 	MPI_Allgather(&witness_array[start], end - start, MPI_INT, witness_array, end - start, MPI_INT, MPI_COMM_WORLD);
+	// }
 }
 
 void np_textanalysis(char *T, int n, char *P, int m, int *witness_array, int ceil_m_by_2, int *MATCH)
@@ -134,14 +135,14 @@ void np_textanalysis(char *T, int n, char *P, int m, int *witness_array, int cei
 			MATCH[i] = 1;
 		}
 	}
-	if (my_rank == 0)
-	{
+	// if (my_rank == 0)
+	// {
 		MPI_Allgather(MPI_IN_PLACE, (end - start) * ceil_m_by_2, MPI_INT, MATCH, (end - start) * ceil_m_by_2, MPI_INT, MPI_COMM_WORLD);
-	}
-	else
-	{
-		MPI_Allgather(&MATCH[start * ceil_m_by_2], (end - start) * ceil_m_by_2, MPI_INT, MATCH, (end - start) * ceil_m_by_2, MPI_INT, MPI_COMM_WORLD);
-	}
+	// }
+	// else
+	// {
+	// 	MPI_Allgather(&MATCH[start * ceil_m_by_2], (end - start) * ceil_m_by_2, MPI_INT, MATCH, (end - start) * ceil_m_by_2, MPI_INT, MPI_COMM_WORLD);
+	// }
 }
 
 void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
@@ -242,14 +243,14 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 				}
 			}
 
-			if (my_rank == 0)
-			{
+			// if (my_rank == 0)
+			// {
 				MPI_Allgather(MPI_IN_PLACE, end - start, MPI_INT, M, end - start, MPI_INT, MPI_COMM_WORLD);
-			}
-			else
-			{
-				MPI_Allgather(&M[start], end - start, MPI_INT, M, end - start, MPI_INT, MPI_COMM_WORLD);
-			}
+			// }
+			// else
+			// {
+			// 	MPI_Allgather(&M[start], end - start, MPI_INT, M, end - start, MPI_INT, MPI_COMM_WORLD);
+			// }
 
 			if (C_size < half_pp_len * k2 + size + k2 * size)
 			{
@@ -289,14 +290,14 @@ void periodic_pattern_matching(int n, char *T, int num_patterns, int *m_set,
 				}
 			}
 
-			if (my_rank == 0)
-			{
+			// if (my_rank == 0)
+			// {
 				MPI_Allgather(MPI_IN_PLACE, (end - start) * k2, MPI_INT, C, (end - start) * k2, MPI_INT, MPI_COMM_WORLD);
-			}
-			else
-			{
-				MPI_Allgather(&C[start * k2], (end - start) * k2, MPI_INT, C, (end - start) * k2, MPI_INT, MPI_COMM_WORLD);
-			}
+			// }
+			// else
+			// {
+			// 	MPI_Allgather(&C[start * k2], (end - start) * k2, MPI_INT, C, (end - start) * k2, MPI_INT, MPI_COMM_WORLD);
+			// }
 
 			get_my_chunk(0, n - m + 1, &start, &end);
 			for (int j = start; j < end && j < n - m + 1; j++)
