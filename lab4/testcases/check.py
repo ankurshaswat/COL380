@@ -20,8 +20,8 @@ for i in range(num_patterns):
     pattern = x[4+i].strip()
     # print(pattern)
     # print(text)
-    x = [m.start() for m in re.finditer('(?='+pattern+')', text)]
-    print(x)
-    print(len(x))
+    y = [m.start() for m in re.finditer('(?='+pattern+')', text)]
+    print(y)
+    print(len(y))
 
 # print(text_len,num_patterns,text)
