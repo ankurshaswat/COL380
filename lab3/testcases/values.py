@@ -29,8 +29,8 @@ S = np.dot(mat_T, mat)
 
 w, v = np.linalg.eig(S)
 
-print('Eigen Values')
-print(sorted(list(w),reverse=True))
+#print('Eigen Values')
+#print(sorted(list(w),reverse=True))
 l_w = sorted(list(w),reverse=True)
 sum_ = np.sum(w)
 # print(sum_)
@@ -73,8 +73,8 @@ u, s, vh = np.linalg.svd(mat)
 # print('SIGMA INV')
 # print(1/s)
 
-# print('VT')
-# print(vh)
+print('VT')
+print(vh)
 
 pca = PCA(n_components=k)
 y = pca.fit_transform(mat)

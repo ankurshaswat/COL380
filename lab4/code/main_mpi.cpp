@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
 
 	computation_time = MPI_Wtime() - start_time;
 
-	MPI_Reduce(&computation_time, &total_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Reduce(&computation_time, &total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
 	if (id == 0)
 	{
@@ -77,6 +77,7 @@ int main(int argc, char *argv[])
 		and outputs the results
 		*/
 		write_result(match_counts, matches, total_time);
+		format_checker(num_patterns, match_counts, matches);
 	}
 
 	MPI_Finalize();
